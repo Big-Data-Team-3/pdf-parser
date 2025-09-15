@@ -1,2 +1,2 @@
-# pdf-parser-financial
+# pdf-parser
 This is the repository for a comprehensive PDF Parser designed for parsing complex PDFs prevalent for financial documents.

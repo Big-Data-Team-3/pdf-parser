@@ -11,4 +11,5 @@ dependencies = [
     "python-dotenv>=1.1.1",
     "sec-api>=1.0.32",
     "sec-edgar-downloader>=5.0.3",
+    "transformers>=4.56.2",
 ]

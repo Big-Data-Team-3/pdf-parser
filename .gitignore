@@ -32,6 +32,7 @@ data/raw/
 data/parsed/
 data/xbrl/
 data/logs/
+data/tables/
 
 # -----------------------------
 # OS-specific

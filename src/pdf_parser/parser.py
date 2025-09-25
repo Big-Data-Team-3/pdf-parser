@@ -15,6 +15,8 @@ from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass, asdict
 import argparse
 import sys
+import tabula
+import hashlib
 
 from pdf_parser._structures import WordBox, PageLayout
 #endregion
@@ -22,9 +24,14 @@ from pdf_parser._structures import WordBox, PageLayout
 #region functions
 
 class PDFParser:
-    def __init__(self):
-        pass
-    
+    def __init__(self, table_extractor="pdfplumber", table_settings=None):
+        """
+        Args:
+            table_extractor: "pdfplumber", "tabula", or "both"
+            table_settings: dict of settings for table extraction (passed to tabula or pdfplumber)
+        """
+        self.table_extractor = table_extractor
+        self.table_settings = table_settings or {}
 
     def parse(self,
         input_source: str,
@@ -74,8 +81,21 @@ class PDFParser:
         raise ValueError(
             "Input source must be a PDF file path, list of PDF paths, or directory path"
         )
-
-
+    
+    def _stats(self):
+        '''
+        Generate performance metrics and stats for the output of the parser from the PDF file.
+        '''
+        return {
+            'total_pages': 0,
+            'total_tables': 0,
+            'pdfplumber_pages': 0,
+            'ocr_pages': 0,
+            'poor_quality_pages': 0,
+            'total_word_boxes': 0,
+            'processing_time': 0,
+            'page_details': []
+        }
     
     def _convert_output_format(out_base: str, output_format: str):
         """
@@ -100,7 +120,7 @@ class PDFParser:
             pass  # Already in txt
         print(f"Output written in {output_format} format.")
 
-    def _process_single_pdf(pdf_path, output_dir, filename, table_settings, output_format="json"):
+    def _process_single_pdf(self, pdf_path, output_dir, filename, table_settings, output_format="json"):
         """
         Process a single PDF file with quality assessment, word box extraction, and layout analysis.
         Saves outputs to disk and returns processing statistics.
@@ -127,6 +147,12 @@ class PDFParser:
         layout_file = os.path.join(output_dir, f"{base_name}_layout.json")
         tables_dir = os.path.join(output_dir, "tables")
         os.makedirs(tables_dir, exist_ok=True)
+
+        # --- Table extraction ---
+        if self.table_extractor in ("tabula", "both"):
+            self._extract_tables_with_tabula(pdf_path, tables_dir)
+        if self.table_extractor in ("pdfplumber", "both"):
+            self._extract_tables_with_pdfplumber(pdf_path, tables_dir, table_settings)
 
         # Optionally skip if already processed
         if all(os.path.exists(f) for f in [*output_paths.values(), metadata_file, wordboxes_file, layout_file]):
@@ -157,7 +183,7 @@ class PDFParser:
                     # _extract_and_integrate_tables(pdf_path, tables_dir, page_num-1, table_settings)
 
                     # --- Page extraction ---
-                    page_result = _extract_page_with_quality_check(page, page_num)
+                    page_result = self._extract_page_with_quality_check(page, page_num)
                     extracted_pages.append(page_result)
                     all_word_boxes.extend(page_result['word_boxes'])
                     all_page_layouts.append(page_result['page_layout'])
@@ -173,8 +199,8 @@ class PDFParser:
                     file_stats['total_word_boxes'] += len(page_result['word_boxes'])
 
             # Save outputs
-            _save_extracted_content(extracted_pages, output_paths["text"], metadata_file, file_stats, output_format)
-            _save_word_boxes_and_layout(all_word_boxes, all_page_layouts, wordboxes_file, layout_file, file_stats)
+            self._save_extracted_content(extracted_pages, output_paths["text"], metadata_file, file_stats, output_format)
+            self._save_word_boxes_and_layout(all_word_boxes, all_page_layouts, wordboxes_file, layout_file, file_stats)
 
         except Exception as e:
             file_stats['error'] = str(e)
@@ -257,383 +283,515 @@ class PDFParser:
             table_settings=table_settings
         )
 
+    def _extract_tables_with_tabula(self, pdf_path, tables_dir):
+        """
+        Extract tables from a PDF using tabula-py, save as CSVs, and generate metadata.
+        """
+        import tabula
+        import hashlib
+        import json
+        import os
+        from datetime import datetime
+        import pandas as pd
+
+        def compute_file_hash(file_path):
+            sha256_hash = hashlib.sha256()
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    sha256_hash.update(chunk)
+            return sha256_hash.hexdigest()
+
+        def compute_table_id(file_id, page_number, table_index, mode, params_hash):
+            content = f"{file_id}_{page_number}_{table_index}_{mode}_{params_hash}"
+            return hashlib.sha256(content.encode()).hexdigest()
+
+        def is_valid_table(df):
+            if df is None or df.empty:
+                return False, "empty_table"
+            if df.shape[1] <= 1:
+                return False, "single_column"
+            has_numbers = df.map(lambda x: str(x).replace(".", "", 1).isdigit()).any().any()
+            if has_numbers:
+                return True, "has_numbers"
+            elif df.shape[1] > 1:
+                return True, "multi_column"
+            else:
+                return False, "no_numbers_single_column"
+
+        os.makedirs(tables_dir, exist_ok=True)
+        metadata_dir = os.path.join(tables_dir, "metadata")
+        os.makedirs(metadata_dir, exist_ok=True)
+
+        tables = tabula.read_pdf(
+            pdf_path,
+            pages="all",
+            multiple_tables=True,
+            stream=True
+        )
+
+        file_id = compute_file_hash(pdf_path)
+        output_files = []
+        tables_metadata = []
+        valid_table_count = 0
+
+        for i, table in enumerate(tables, start=1):
+            is_valid, validation_reason = is_valid_table(table)
+            csv_path = os.path.join(tables_dir, f"tabula_table_{i}.csv") if is_valid else None
+            if is_valid:
+                table.to_csv(csv_path, index=False)
+                output_files.append(csv_path)
+                valid_table_count += 1
+
+            # Table metadata
+            params_hash = hashlib.sha256("stream_mode".encode()).hexdigest()[:8]
+            table_id = compute_table_id(file_id, i, i, "stream", params_hash)
+            csv_hash = compute_file_hash(csv_path) if csv_path and os.path.exists(csv_path) else None
+            num_rows = len(table) if table is not None else 0
+            num_columns = len(table.columns) if table is not None and not table.empty else 0
+            numeric_cell_ratio = 0.0
+            empty_cell_ratio = 0.0
+            if table is not None and not table.empty:
+                total_cells = num_rows * num_columns
+                if total_cells > 0:
+                    numeric_cells = table.map(lambda x: str(x).replace(".", "", 1).isdigit()).sum().sum()
+                    numeric_cell_ratio = numeric_cells / total_cells
+                    empty_cells = table.isnull().sum().sum()
+                    empty_cell_ratio = empty_cells / total_cells
+
+            table_meta = {
+                "table_id": table_id,
+                "file_id": file_id,
+                "table_index": i,
+                "csv_path": csv_path,
+                "csv_sha256": csv_hash,
+                "page_number": i,  # Tabula doesn't always provide page info
+                "num_rows": num_rows,
+                "num_columns": num_columns,
+                "is_valid_table": is_valid,
+                "validation_reason": validation_reason,
+                "numeric_cell_ratio": round(numeric_cell_ratio, 3),
+                "empty_cell_ratio": round(empty_cell_ratio, 3),
+                "extraction_timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+            tables_metadata.append(table_meta)
+
+        # File-level metadata
+        file_metadata = {
+            "file_id": file_id,
+            "source_path": pdf_path,
+            "filename": os.path.basename(pdf_path),
+            "file_size_bytes": os.path.getsize(pdf_path),
+            "extraction_timestamp": datetime.utcnow().isoformat() + "Z",
+            "tabula_version": getattr(tabula, '__version__', 'unknown'),
+            "mode": "stream",
+            "tables_found": len(tables),
+            "tables_valid": valid_table_count,
+            "output_dir": tables_dir,
+            "processing_status": "success"
+        }
+
+        # Save metadata files
+        with open(os.path.join(metadata_dir, "files.jsonl"), "w") as f:
+            f.write(json.dumps(file_metadata) + "\n")
+        with open(os.path.join(metadata_dir, "tables.jsonl"), "w") as f:
+            for table_meta in tables_metadata:
+                f.write(json.dumps(table_meta) + "\n")
+
+    def _extract_tables_with_pdfplumber(self, pdf_path, tables_dir, table_settings):
+        """
+        Extract tables from a PDF using pdfplumber and save as CSVs.
+        """
+        import pdfplumber
+        import pandas as pd
+
+        os.makedirs(tables_dir, exist_ok=True)
+        with pdfplumber.open(pdf_path) as pdf:
+            for page_num, page in enumerate(pdf.pages):
+                tables = page.extract_tables(table_settings or {})
+                for idx, table in enumerate(tables):
+                    if not table or not table[0]:
+                        continue
+                    df = pd.DataFrame(table[1:], columns=table[0]) if len(table) > 1 else pd.DataFrame(table)
+                    csv_path = os.path.join(tables_dir, f"pdfplumber_table_{page_num+1}_{idx+1}.csv")
+                    df.to_csv(csv_path, index=False)
+
+    def _extract_page_with_quality_check(self, page, page_num):
+        """
+        Extract text and word boxes from a single page with quality assessment and OCR fallback.
+        Returns a dict with keys: 'text', 'word_boxes', 'page_layout', 'metadata'.
+        """
+        # TODO: Implement extraction logic (pdfplumber, OCR fallback, layout analysis, etc.)
+        raise NotImplementedError("Implement _extract_page_with_quality_check")
+
+    def _save_extracted_content(extracted_pages, output_file, metadata_file, file_stats, output_format):
+        """
+        Save extracted text and metadata with page-level granularity in the requested format.
+        """
+        # Save extracted text in the requested format
+        if output_format == "txt":
+            with open(output_file, 'w', encoding='utf-8') as f:
+                for page_data in extracted_pages:
+                    f.write(page_data['text'])
+                    f.write("\n\n")
+        elif output_format == "json":
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(
+                    {
+                        "pages": [
+                            {
+                                "page_number": page_data['metadata']['page_number'],
+                                "text": page_data['text']
+                            }
+                            for page_data in extracted_pages
+                        ]
+                    },
+                    f, indent=2, ensure_ascii=False
+                )
+        elif output_format == "markdown":
+            with open(output_file, 'w', encoding='utf-8') as f:
+                for page_data in extracted_pages:
+                    page_num = page_data['metadata']['page_number']
+                    f.write(f"# Page {page_num}\n\n")
+                    f.write(page_data['text'])
+                    f.write("\n\n")
+        else:
+            raise ValueError(f"Unsupported output_format: {output_format}")
+
+        # Save metadata as JSON
+        with open(metadata_file, 'w', encoding='utf-8') as f:
+            json.dump(file_stats, f, indent=2, ensure_ascii=False)
+
+    def _save_word_boxes_and_layout(all_word_boxes, all_page_layouts, wordboxes_file, layout_file, file_stats):
+        """
+        Save word boxes and layout data as JSON files.
+        """
+        # TODO: Implement saving logic for word boxes and layout
+        raise NotImplementedError("Implement _save_word_boxes_and_layout")
+
+    def _extract_with_ocr(self, page):
+        """
+        Extract text from a PDF page using Tesseract OCR as a fallback.
+        Returns the extracted text as a string.
+        """
+        try:
+            # Convert page to image (high resolution for better OCR)
+            page_image = page.to_image(resolution=300)
+            pil_image = page_image.original
+
+            # Use pytesseract for OCR
+            text = pytesseract.image_to_string(pil_image, lang='eng')
+            return text.strip()
+        except Exception as e:
+            print(f"      ❌ OCR failed: {e}")
+            return ""
+
+    def _calculate_quality_score(self, metrics, method):
+        """
+        Calculate a quality score (0-100) for the extracted text.
+        """
+        score = 0
+
+        # Character count scoring (0-30 points)
+        char_count = metrics.get('char_count', 0)
+        if 200 <= char_count <= 5000:
+            score += 30
+        elif 100 <= char_count < 200 or 5000 < char_count <= 8000:
+            score += 20
+        elif 50 <= char_count < 100 or 8000 < char_count <= 10000:
+            score += 10
+
+        # Word count scoring (0-25 points)
+        word_count = metrics.get('word_count', 0)
+        if 50 <= word_count <= 1000:
+            score += 25
+        elif 25 <= word_count < 50 or 1000 < word_count <= 1500:
+            score += 15
+        elif 10 <= word_count < 25:
+            score += 10
+
+        # Line count scoring (0-20 points)
+        line_count = metrics.get('line_count', 0)
+        if 10 <= line_count <= 100:
+            score += 20
+        elif 5 <= line_count < 10 or 100 < line_count <= 150:
+            score += 15
+        elif 2 <= line_count < 5:
+            score += 10
+
+        # Method bonus (0-25 points)
+        if method == 'pdfplumber':
+            score += 25
+        else:  # tesseract or other OCR
+            score += 15
+
+        return min(score, 100)
+
+    def _analyze_page_layout(self, word_boxes, page_width, page_height):
+        """
+        Analyze page layout and determine reading order with comprehensive metrics.
+        Returns a dictionary with layout analysis.
+        """
+        if not word_boxes:
+            return {
+                'columns': 0,
+                'rows': 0,
+                'text_density': 0,
+                'layout_type': 'empty',
+                'reading_order': [],
+                'avg_font_size': 0,
+                'font_size_variance': 0,
+                'aspect_ratio': 0,
+                'text_flow_analysis': {}
+            }
+
+        # Calculate text density
+        total_text_area = sum(box.area for box in word_boxes)
+        page_area = page_width * page_height
+        text_density = total_text_area / page_area if page_area > 0 else 0
+
+        # Determine layout type based on word distribution
+        x_positions = [box.center_x for box in word_boxes]
+        y_positions = [box.center_y for box in word_boxes]
+
+        # Simple column detection
+        x_sorted = sorted(set(x_positions))
+        column_gaps = [x_sorted[i+1] - x_sorted[i] for i in range(len(x_sorted)-1)]
+        avg_gap = sum(column_gaps) / len(column_gaps) if column_gaps else 0
+
+        # Estimate number of columns
+        estimated_columns = max(1, int(page_width / (avg_gap + 50)) if avg_gap > 0 else 1)
+
+        # Determine reading order
+        reading_order = self._determine_reading_order(word_boxes, estimated_columns)
+
+        # Classify layout type
+        layout_type = self._classify_layout_type(word_boxes, estimated_columns, text_density)
+
+        # Calculate additional metrics
+        font_sizes = [box.fontsize for box in word_boxes if box.fontsize is not None]
+        avg_font_size = np.mean(font_sizes) if font_sizes else 0
+        font_size_variance = np.var(font_sizes) if len(font_sizes) > 1 else 0
+
+        x_spread = max(x_positions) - min(x_positions) if x_positions else 0
+        y_spread = max(y_positions) - min(y_positions) if y_positions else 0
+        aspect_ratio = x_spread / y_spread if y_spread > 0 else 0
+
+        return {
+            'columns': estimated_columns,
+            'rows': len(set(y_positions)),
+            'text_density': text_density,
+            'layout_type': layout_type,
+            'reading_order': reading_order,
+            'avg_font_size': avg_font_size,
+            'font_size_variance': font_size_variance,
+            'aspect_ratio': aspect_ratio,
+            'text_flow_analysis': {
+                'x_spread': x_spread,
+                'y_spread': y_spread,
+                'word_count': len(word_boxes),
+                'unique_x_positions': len(set(x_positions)),
+                'unique_y_positions': len(set(y_positions))
+            }
+        }
+
+    def _extract_word_boxes_with_layout(page, page_num, method='pdfplumber'):
+        """
+        Extract word boxes with comprehensive layout analysis including document positioning.
+        Returns (word_boxes, text_blocks).
+        """
+        word_boxes = []
+        text_blocks = []
+
+        try:
+            if method == 'pdfplumber':
+                # Try basic word extraction
+                words = page.extract_words(
+                    x_tolerance=3,
+                    y_tolerance=3,
+                    keep_blank_chars=False
+                )
+                for idx, word in enumerate(words):
+                    if not all(attr in word for attr in ['text', 'x0', 'y0', 'x1', 'y1']):
+                        continue
+                    word_box = WordBox(
+                        text=word.get('text', ''),
+                        x0=float(word.get('x0', 0)),
+                        y0=float(word.get('y0', 0)),
+                        x1=float(word.get('x1', 0)),
+                        y1=float(word.get('y1', 0)),
+                        width=float(word.get('x1', 0)) - float(word.get('x0', 0)),
+                        height=float(word.get('y1', 0)) - float(word.get('y0', 0)),
+                        fontname=word.get('fontname'),
+                        fontsize=word.get('size'),
+                        fontcolor=word.get('fontcolor'),
+                        doctop=word.get('doctop'),
+                        upright=word.get('upright'),
+                        top=word.get('top'),
+                        bottom=word.get('bottom'),
+                        left=word.get('left'),
+                        right=word.get('right'),
+                        page_number=page_num,
+                        word_index=idx
+                    )
+                    word_boxes.append(word_box)
+                try:
+                    text_blocks = page.extract_text_simple()
+                except Exception:
+                    text_blocks = []
+            else:  # OCR method
+                # You can implement a more detailed OCR word box extraction if needed
+                word_boxes = []  # Placeholder for OCR word box extraction
+                text_blocks = []
+        except Exception as e:
+            print(f"      ❌ Word box extraction failed for page {page_num}: {e}")
+            return [], []
+
+        return word_boxes, text_blocks
+
+    def _analyze_document_layout(self, page_layouts):
+        """
+        Analyze overall document layout across all pages.
+        Returns a dictionary with document-level layout statistics.
+        """
+        import numpy as np
+
+        if not page_layouts:
+            return {'document_type': 'empty', 'analysis': {}}
+
+        # Collect statistics across all pages
+        layout_types = [layout.layout_type for layout in page_layouts]
+        column_counts = [layout.estimated_columns for layout in page_layouts]
+        text_densities = [layout.text_density for layout in page_layouts]
+        font_sizes = [layout.average_font_size for layout in page_layouts if layout.average_font_size > 0]
+
+        # Analyze document characteristics
+        most_common_layout = max(set(layout_types), key=layout_types.count) if layout_types else 'unknown'
+        avg_columns = np.mean(column_counts) if column_counts else 1
+        avg_text_density = np.mean(text_densities) if text_densities else 0
+        avg_font_size = np.mean(font_sizes) if font_sizes else 0
+
+        # Determine document type
+        if most_common_layout in ['single_column', 'narrow_single_column']:
+            document_type = 'single_column_document'
+        elif most_common_layout in ['two_column', 'mixed_formatting_two_column']:
+            document_type = 'two_column_document'
+        elif most_common_layout in ['multi_column', 'dense_multi_column']:
+            document_type = 'multi_column_document'
+        else:
+            document_type = 'mixed_layout_document'
+
+        return {
+            'document_type': document_type,
+            'most_common_layout': most_common_layout,
+            'average_columns': avg_columns,
+            'average_text_density': avg_text_density,
+            'average_font_size': avg_font_size,
+            'layout_distribution': {layout: layout_types.count(layout) for layout in set(layout_types)},
+            'column_distribution': {cols: column_counts.count(cols) for cols in set(column_counts)},
+            'total_pages': len(page_layouts),
+            'pages_with_content': len([layout for layout in page_layouts if layout.word_boxes])
+        }
+
+    def _determine_reading_order(self, word_boxes, estimated_columns):
+        """
+        Determine reading order of words (top-to-bottom, left-to-right), optionally column-aware.
+        Returns a list of word indices in reading order.
+        """
+        if not word_boxes:
+            return []
+
+        # Simple top-to-bottom, left-to-right sorting
+        def simple_reading_order():
+            sorted_boxes = sorted(word_boxes, key=lambda box: (box.y0, box.x0))
+            return [box.word_index for box in sorted_boxes]
+
+        # Column-aware reading order
+        def column_aware_reading_order():
+            if estimated_columns <= 1:
+                return simple_reading_order()
+            page_width = max(box.x1 for box in word_boxes) if word_boxes else 0
+            column_width = page_width / estimated_columns
+            column_groups = [[] for _ in range(estimated_columns)]
+            for box in word_boxes:
+                column_idx = min(int(box.center_x / column_width), estimated_columns - 1)
+                column_groups[column_idx].append(box)
+            reading_order = []
+            for column in column_groups:
+                column_sorted = sorted(column, key=lambda box: box.y0)
+                reading_order.extend([box.word_index for box in column_sorted])
+            return reading_order
+
+        # Advanced reading order with line detection (optional, not used by default)
+        # def advanced_reading_order():
+        #     ...
+
+        if estimated_columns > 1:
+            return column_aware_reading_order()
+        else:
+            return simple_reading_order()
+
+    def _classify_layout_type(self, word_boxes, estimated_columns, text_density):
+        """
+        Classify the layout type based on word distribution and density.
+        """
+        if not word_boxes:
+            return 'empty'
+
+        # Analyze word distribution
+        x_positions = [box.center_x for box in word_boxes]
+        y_positions = [box.center_y for box in word_boxes]
+
+        # Calculate spreads and statistics
+        x_spread = max(x_positions) - min(x_positions) if x_positions else 0
+        y_spread = max(y_positions) - min(y_positions) if y_positions else 0
+        aspect_ratio = x_spread / y_spread if y_spread > 0 else 0
+
+        # Analyze font size distribution
+        font_sizes = [box.fontsize for box in word_boxes if box.fontsize is not None]
+        avg_font_size = np.mean(font_sizes) if font_sizes else 12
+        font_size_variance = np.var(font_sizes) if len(font_sizes) > 1 else 0
+
+        # Analyze text density patterns
+        density_thresholds = {
+            'very_sparse': 0.05,
+            'sparse': 0.15,
+            'normal': 0.35,
+            'dense': 0.55,
+            'very_dense': 0.75
+        }
+
+        # Classify based on multiple criteria
+        if text_density < density_thresholds['very_sparse']:
+            return 'very_sparse'
+        elif text_density < density_thresholds['sparse']:
+            return 'sparse'
+        elif estimated_columns == 1:
+            if aspect_ratio < 0.3:
+                return 'narrow_single_column'
+            elif font_size_variance > 50:  # High variance in font sizes
+                return 'mixed_formatting_single_column'
+            else:
+                return 'single_column'
+        elif estimated_columns == 2:
+            if font_size_variance > 50:
+                return 'mixed_formatting_two_column'
+            else:
+                return 'two_column'
+        elif estimated_columns >= 3:
+            if text_density > density_thresholds['dense']:
+                return 'dense_multi_column'
+            else:
+                return 'multi_column'
+        elif x_spread < y_spread * 0.4:
+            return 'narrow_column'
+        elif font_size_variance > 100:  # Very high variance
+            return 'complex_mixed_layout'
+        elif text_density > density_thresholds['very_dense']:
+            return 'very_dense_layout'
+        else:
+            return 'mixed_layout'
 
 #endregion
 
 #region main
-def _extract_page_with_quality_check(page, page_num):
-    """
-    Extract text and word boxes from a single page with quality assessment and OCR fallback.
-    Returns a dict with keys: 'text', 'word_boxes', 'page_layout', 'metadata'.
-    """
-    # TODO: Implement extraction logic (pdfplumber, OCR fallback, layout analysis, etc.)
-    raise NotImplementedError("Implement _extract_page_with_quality_check")
-
-def _save_extracted_content(extracted_pages, output_file, metadata_file, file_stats, output_format):
-    """
-    Save extracted text and metadata with page-level granularity in the requested format.
-    """
-    # Save extracted text in the requested format
-    if output_format == "txt":
-        with open(output_file, 'w', encoding='utf-8') as f:
-            for page_data in extracted_pages:
-                f.write(page_data['text'])
-                f.write("\n\n")
-    elif output_format == "json":
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(
-                {
-                    "pages": [
-                        {
-                            "page_number": page_data['metadata']['page_number'],
-                            "text": page_data['text']
-                        }
-                        for page_data in extracted_pages
-                    ]
-                },
-                f, indent=2, ensure_ascii=False
-            )
-    elif output_format == "markdown":
-        with open(output_file, 'w', encoding='utf-8') as f:
-            for page_data in extracted_pages:
-                page_num = page_data['metadata']['page_number']
-                f.write(f"# Page {page_num}\n\n")
-                f.write(page_data['text'])
-                f.write("\n\n")
-    else:
-        raise ValueError(f"Unsupported output_format: {output_format}")
-
-    # Save metadata as JSON
-    with open(metadata_file, 'w', encoding='utf-8') as f:
-        json.dump(file_stats, f, indent=2, ensure_ascii=False)
-
-def _save_word_boxes_and_layout(all_word_boxes, all_page_layouts, wordboxes_file, layout_file, file_stats):
-    """
-    Save word boxes and layout data as JSON files.
-    """
-    # TODO: Implement saving logic for word boxes and layout
-    raise NotImplementedError("Implement _save_word_boxes_and_layout")
-
-def _extract_with_ocr(page):
-    """
-    Extract text from a PDF page using Tesseract OCR as a fallback.
-    Returns the extracted text as a string.
-    """
-    try:
-        # Convert page to image (high resolution for better OCR)
-        page_image = page.to_image(resolution=300)
-        pil_image = page_image.original
-
-        # Use pytesseract for OCR
-        text = pytesseract.image_to_string(pil_image, lang='eng')
-        return text.strip()
-    except Exception as e:
-        print(f"      ❌ OCR failed: {e}")
-        return ""
-
-def _calculate_quality_score(metrics, method):
-    """
-    Calculate a quality score (0-100) for the extracted text.
-    """
-    score = 0
-
-    # Character count scoring (0-30 points)
-    char_count = metrics.get('char_count', 0)
-    if 200 <= char_count <= 5000:
-        score += 30
-    elif 100 <= char_count < 200 or 5000 < char_count <= 8000:
-        score += 20
-    elif 50 <= char_count < 100 or 8000 < char_count <= 10000:
-        score += 10
-
-    # Word count scoring (0-25 points)
-    word_count = metrics.get('word_count', 0)
-    if 50 <= word_count <= 1000:
-        score += 25
-    elif 25 <= word_count < 50 or 1000 < word_count <= 1500:
-        score += 15
-    elif 10 <= word_count < 25:
-        score += 10
-
-    # Line count scoring (0-20 points)
-    line_count = metrics.get('line_count', 0)
-    if 10 <= line_count <= 100:
-        score += 20
-    elif 5 <= line_count < 10 or 100 < line_count <= 150:
-        score += 15
-    elif 2 <= line_count < 5:
-        score += 10
-
-    # Method bonus (0-25 points)
-    if method == 'pdfplumber':
-        score += 25
-    else:  # tesseract or other OCR
-        score += 15
-
-    return min(score, 100)
-
-def _analyze_page_layout(word_boxes, page_width, page_height):
-    """
-    Analyze page layout and determine reading order with comprehensive metrics.
-    Returns a dictionary with layout analysis.
-    """
-    if not word_boxes:
-        return {
-            'columns': 0,
-            'rows': 0,
-            'text_density': 0,
-            'layout_type': 'empty',
-            'reading_order': [],
-            'avg_font_size': 0,
-            'font_size_variance': 0,
-            'aspect_ratio': 0,
-            'text_flow_analysis': {}
-        }
-
-    # Calculate text density
-    total_text_area = sum(box.area for box in word_boxes)
-    page_area = page_width * page_height
-    text_density = total_text_area / page_area if page_area > 0 else 0
-
-    # Determine layout type based on word distribution
-    x_positions = [box.center_x for box in word_boxes]
-    y_positions = [box.center_y for box in word_boxes]
-
-    # Simple column detection
-    x_sorted = sorted(set(x_positions))
-    column_gaps = [x_sorted[i+1] - x_sorted[i] for i in range(len(x_sorted)-1)]
-    avg_gap = sum(column_gaps) / len(column_gaps) if column_gaps else 0
-
-    # Estimate number of columns
-    estimated_columns = max(1, int(page_width / (avg_gap + 50)) if avg_gap > 0 else 1)
-
-    # Determine reading order
-    reading_order = _determine_reading_order(word_boxes, estimated_columns)
-
-    # Classify layout type
-    layout_type = _classify_layout_type(word_boxes, estimated_columns, text_density)
-
-    # Calculate additional metrics
-    font_sizes = [box.fontsize for box in word_boxes if box.fontsize is not None]
-    avg_font_size = np.mean(font_sizes) if font_sizes else 0
-    font_size_variance = np.var(font_sizes) if len(font_sizes) > 1 else 0
-
-    x_spread = max(x_positions) - min(x_positions) if x_positions else 0
-    y_spread = max(y_positions) - min(y_positions) if y_positions else 0
-    aspect_ratio = x_spread / y_spread if y_spread > 0 else 0
-
-    return {
-        'columns': estimated_columns,
-        'rows': len(set(y_positions)),
-        'text_density': text_density,
-        'layout_type': layout_type,
-        'reading_order': reading_order,
-        'avg_font_size': avg_font_size,
-        'font_size_variance': font_size_variance,
-        'aspect_ratio': aspect_ratio,
-        'text_flow_analysis': {
-            'x_spread': x_spread,
-            'y_spread': y_spread,
-            'word_count': len(word_boxes),
-            'unique_x_positions': len(set(x_positions)),
-            'unique_y_positions': len(set(y_positions))
-        }
-    }
-
-def _extract_word_boxes_with_layout(page, page_num, method='pdfplumber'):
-    """
-    Extract word boxes with comprehensive layout analysis including document positioning.
-    Returns (word_boxes, text_blocks).
-    """
-    word_boxes = []
-    text_blocks = []
-
-    try:
-        if method == 'pdfplumber':
-            # Try basic word extraction
-            words = page.extract_words(
-                x_tolerance=3,
-                y_tolerance=3,
-                keep_blank_chars=False
-            )
-            for idx, word in enumerate(words):
-                if not all(attr in word for attr in ['text', 'x0', 'y0', 'x1', 'y1']):
-                    continue
-                word_box = WordBox(
-                    text=word.get('text', ''),
-                    x0=float(word.get('x0', 0)),
-                    y0=float(word.get('y0', 0)),
-                    x1=float(word.get('x1', 0)),
-                    y1=float(word.get('y1', 0)),
-                    width=float(word.get('x1', 0)) - float(word.get('x0', 0)),
-                    height=float(word.get('y1', 0)) - float(word.get('y0', 0)),
-                    fontname=word.get('fontname'),
-                    fontsize=word.get('size'),
-                    fontcolor=word.get('fontcolor'),
-                    doctop=word.get('doctop'),
-                    upright=word.get('upright'),
-                    top=word.get('top'),
-                    bottom=word.get('bottom'),
-                    left=word.get('left'),
-                    right=word.get('right'),
-                    page_number=page_num,
-                    word_index=idx
-                )
-                word_boxes.append(word_box)
-            try:
-                text_blocks = page.extract_text_simple()
-            except Exception:
-                text_blocks = []
-        else:  # OCR method
-            # You can implement a more detailed OCR word box extraction if needed
-            word_boxes = []  # Placeholder for OCR word box extraction
-            text_blocks = []
-    except Exception as e:
-        print(f"      ❌ Word box extraction failed for page {page_num}: {e}")
-        return [], []
-
-    return word_boxes, text_blocks
-
-def _analyze_document_layout(page_layouts):
-    """
-    Analyze overall document layout across all pages.
-    Returns a dictionary with document-level layout statistics.
-    """
-    import numpy as np
-
-    if not page_layouts:
-        return {'document_type': 'empty', 'analysis': {}}
-
-    # Collect statistics across all pages
-    layout_types = [layout.layout_type for layout in page_layouts]
-    column_counts = [layout.estimated_columns for layout in page_layouts]
-    text_densities = [layout.text_density for layout in page_layouts]
-    font_sizes = [layout.average_font_size for layout in page_layouts if layout.average_font_size > 0]
-
-    # Analyze document characteristics
-    most_common_layout = max(set(layout_types), key=layout_types.count) if layout_types else 'unknown'
-    avg_columns = np.mean(column_counts) if column_counts else 1
-    avg_text_density = np.mean(text_densities) if text_densities else 0
-    avg_font_size = np.mean(font_sizes) if font_sizes else 0
-
-    # Determine document type
-    if most_common_layout in ['single_column', 'narrow_single_column']:
-        document_type = 'single_column_document'
-    elif most_common_layout in ['two_column', 'mixed_formatting_two_column']:
-        document_type = 'two_column_document'
-    elif most_common_layout in ['multi_column', 'dense_multi_column']:
-        document_type = 'multi_column_document'
-    else:
-        document_type = 'mixed_layout_document'
-
-    return {
-        'document_type': document_type,
-        'most_common_layout': most_common_layout,
-        'average_columns': avg_columns,
-        'average_text_density': avg_text_density,
-        'average_font_size': avg_font_size,
-        'layout_distribution': {layout: layout_types.count(layout) for layout in set(layout_types)},
-        'column_distribution': {cols: column_counts.count(cols) for cols in set(column_counts)},
-        'total_pages': len(page_layouts),
-        'pages_with_content': len([layout for layout in page_layouts if layout.word_boxes])
-    }
-
-def _determine_reading_order(word_boxes, estimated_columns):
-    """
-    Determine reading order of words (top-to-bottom, left-to-right), optionally column-aware.
-    Returns a list of word indices in reading order.
-    """
-    if not word_boxes:
-        return []
-
-    # Simple top-to-bottom, left-to-right sorting
-    def simple_reading_order():
-        sorted_boxes = sorted(word_boxes, key=lambda box: (box.y0, box.x0))
-        return [box.word_index for box in sorted_boxes]
-
-    # Column-aware reading order
-    def column_aware_reading_order():
-        if estimated_columns <= 1:
-            return simple_reading_order()
-        page_width = max(box.x1 for box in word_boxes) if word_boxes else 0
-        column_width = page_width / estimated_columns
-        column_groups = [[] for _ in range(estimated_columns)]
-        for box in word_boxes:
-            column_idx = min(int(box.center_x / column_width), estimated_columns - 1)
-            column_groups[column_idx].append(box)
-        reading_order = []
-        for column in column_groups:
-            column_sorted = sorted(column, key=lambda box: box.y0)
-            reading_order.extend([box.word_index for box in column_sorted])
-        return reading_order
-
-    # Advanced reading order with line detection (optional, not used by default)
-    # def advanced_reading_order():
-    #     ...
-
-    if estimated_columns > 1:
-        return column_aware_reading_order()
-    else:
-        return simple_reading_order()
-
-def _classify_layout_type(word_boxes, estimated_columns, text_density):
-    """
-    Classify the layout type based on word distribution and density.
-    """
-    if not word_boxes:
-        return 'empty'
-
-    # Analyze word distribution
-    x_positions = [box.center_x for box in word_boxes]
-    y_positions = [box.center_y for box in word_boxes]
-
-    # Calculate spreads and statistics
-    x_spread = max(x_positions) - min(x_positions) if x_positions else 0
-    y_spread = max(y_positions) - min(y_positions) if y_positions else 0
-    aspect_ratio = x_spread / y_spread if y_spread > 0 else 0
-
-    # Analyze font size distribution
-    font_sizes = [box.fontsize for box in word_boxes if box.fontsize is not None]
-    avg_font_size = np.mean(font_sizes) if font_sizes else 12
-    font_size_variance = np.var(font_sizes) if len(font_sizes) > 1 else 0
-
-    # Analyze text density patterns
-    density_thresholds = {
-        'very_sparse': 0.05,
-        'sparse': 0.15,
-        'normal': 0.35,
-        'dense': 0.55,
-        'very_dense': 0.75
-    }
-
-    # Classify based on multiple criteria
-    if text_density < density_thresholds['very_sparse']:
-        return 'very_sparse'
-    elif text_density < density_thresholds['sparse']:
-        return 'sparse'
-    elif estimated_columns == 1:
-        if aspect_ratio < 0.3:
-            return 'narrow_single_column'
-        elif font_size_variance > 50:  # High variance in font sizes
-            return 'mixed_formatting_single_column'
-        else:
-            return 'single_column'
-    elif estimated_columns == 2:
-        if font_size_variance > 50:
-            return 'mixed_formatting_two_column'
-        else:
-            return 'two_column'
-    elif estimated_columns >= 3:
-        if text_density > density_thresholds['dense']:
-            return 'dense_multi_column'
-        else:
-            return 'multi_column'
-    elif x_spread < y_spread * 0.4:
-        return 'narrow_column'
-    elif font_size_variance > 100:  # Very high variance
-        return 'complex_mixed_layout'
-    elif text_density > density_thresholds['very_dense']:
-        return 'very_dense_layout'
-    else:
-        return 'mixed_layout'
 #endregion

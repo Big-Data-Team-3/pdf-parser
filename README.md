@@ -140,9 +140,9 @@ It combines **multiple extraction engines** (rule-based + deep learning + OCR) t
 4. **Storage** → Save structured outputs (JSON, CSV, Markdown).
 5. **Evaluation** → Run quality metrics, cost comparisons, and regression tests.
 
-### **System Architecture Diagram**
+### **System Architecture**
 
-![SEC EDGAR Document Processing Pipeline](./data/sec_edgar_final_clean.png)
+![SEC EDGAR Document Processing Pipeline](./docs/sec_edgar_final_clean.png)
 *SEC EDGAR Document Processing Pipeline – Complete Architecture*
 
 ---

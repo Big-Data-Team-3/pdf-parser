@@ -274,6 +274,32 @@ def preprocess_data(loaded_data, use_layout_parsing:bool=False):
             min(1000, max(0, int((max_y / page_height) * 1000)))
         ]
 
+    def _is_likely_tabular_data(text):
+        """Detect if text is likely tabular financial data."""
+        # Count dollar signs and numeric patterns
+        dollar_count = text.count('$')
+        comma_separated_numbers = len([x for x in text.split() if ',' in x and any(c.isdigit() for c in x)])
+        
+        # Look for multiple columns of aligned data
+        lines = text.split('\n')
+        if len(lines) > 3:  # Multi-line content
+            # Check for consistent patterns across lines
+            lines_with_numbers = sum(1 for line in lines if any(c.isdigit() for c in line))
+            if lines_with_numbers > len(lines) * 0.6:  # 60% of lines have numbers
+                return True
+        
+        # Financial data indicators
+        if dollar_count >= 4 and comma_separated_numbers >= 6:
+            return True
+            
+        # Look for balance sheet / income statement patterns
+        financial_keywords = ['assets', 'liabilities', 'equity', 'revenue', 'income', 'cash', 'debt']
+        keyword_matches = sum(1 for keyword in financial_keywords if keyword in text.lower())
+        if keyword_matches >= 3 and dollar_count >= 2:
+            return True
+            
+        return False
+
     def _classify_element_type(line_words, line_text, layout_analysis):
         """Classify the type of layout element based on text and formatting."""
         text = line_text.strip()
@@ -289,9 +315,13 @@ def preprocess_data(loaded_data, use_layout_parsing:bool=False):
             return "title"
         elif any(keyword in text.lower() for keyword in ['table', 'schedule', 'exhibit']):
             return "table_reference"
+        # NEW: Enhanced table detection
+        elif _is_likely_tabular_data(text):
+            return "table"
         else:
             return "paragraph"
 
+    
     def _merge_bboxes(bbox1, bbox2):
         """Merge two bounding boxes."""
         return [
@@ -496,6 +526,10 @@ def preprocess_data(loaded_data, use_layout_parsing:bool=False):
     formatted_data = format_data(loaded_data, use_layout_parsing)
     return formatted_data
 
+
+    
+
+
 def perform_inference(preprocessed_data, use_gpu:bool=False, layout_parsing:bool=False):
     '''
     Perform inference on the data using the LayoutLMv3 model.
@@ -549,6 +583,9 @@ def perform_inference(preprocessed_data, use_gpu:bool=False, layout_parsing:bool
                 return "page_header"
             else:
                 return "section_header"
+        
+        elif element_type == "table":  # ADD THIS
+            return "financial_table"
         
         elif element_type == "paragraph":
             if any(keyword in text for keyword in ["table", "schedule", "exhibit"]):
@@ -861,6 +898,12 @@ def perform_inference(preprocessed_data, use_gpu:bool=False, layout_parsing:bool
             else:
                 return f"potential_{rule_based_role}"
         
+        elif rule_based_role == "financial_table":  # ADD THIS
+            if "TABLE" in ml_label:
+                return "confirmed_financial_table"
+            else:
+                return "rule_based_financial_table"
+        
         elif rule_based_role == "body_text":
             if ml_label in ["B-ANSWER", "I-ANSWER"]:
                 return "detailed_content"
@@ -877,7 +920,7 @@ def perform_inference(preprocessed_data, use_gpu:bool=False, layout_parsing:bool
         
         else:
             return f"{rule_based_role}_ml_{ml_label.lower()}"
-
+    
     # Set device
     print("--------------------------------")
     print("Setting up device...")

@@ -1,0 +1,135 @@
+# DVC Pipeline Configuration for PDF Parser
+# This pipeline defines the complete data processing workflow from download to export
+
+stages:
+  # Stage 1: Download SEC filings and convert to PDF
+  download:
+    cmd: >
+      python scripts/download_stage.py
+      --ticker ${ticker}
+      --form-type ${form_type}
+      --num-filings ${num_filings}
+      --output-dir data/raw/
+    params:
+      - ticker
+      - form_type
+      - num_filings
+    outs:
+      - data/raw/${ticker}/${form_type}/PDFs/
+      - data/xbrl/
+    desc: "Download SEC filings and convert to PDF format using sec-api"
+    
+  # Stage 2: Parse PDFs to extract text, tables, and layout information  
+  parse:
+    cmd: >
+      python scripts/parse_stage.py
+      --input-dir data/raw/${ticker}/${form_type}/PDFs/
+      --output-dir data/parsed/
+      --output-format json
+    deps:
+      - data/raw/${ticker}/${form_type}/PDFs/
+      - src/pdf_parser/parser.py
+      - src/pdf_parser/_structures.py
+    outs:
+      - data/parsed/
+    desc: "Extract text, word boxes, and layout using pdfplumber with OCR fallback"
+
+  # Stage 3: Extract tables using tabula-py and pdfplumber
+  tables:
+    cmd: >
+      python scripts/tables_stage.py
+      --input-dir data/raw/${ticker}/${form_type}/PDFs/
+      --parsed-dir data/parsed/
+      --mode tabula
+    deps:
+      - data/raw/${ticker}/${form_type}/PDFs/
+      - data/parsed/
+      - src/pdf_parser/parser.py
+    outs:
+      - data/parsed/*/tables/
+    desc: "Extract tables from PDFs using tabula-py with metadata generation"
+
+  # Stage 4: Perform layout analysis using LayoutLMv3
+  layout:
+    cmd: >
+      python scripts/layout_stage.py
+      --input-dir data/parsed/
+      --use-gpu ${use_gpu}
+      --layout-parsing ${layout_parsing}
+    params:
+      - use_gpu
+      - layout_parsing
+    deps:
+      - data/parsed/
+      - src/pdf_parser/layout.py
+    outs:
+      - data/parsed/*/lmv3/
+    desc: "Perform layout analysis and semantic role detection using LayoutLMv3"
+
+  # Stage 5: Run docling extraction for comparison baseline
+  docling:
+    cmd: >
+      python scripts/docling_stage.py
+      --input-dir data/raw/${ticker}/${form_type}/PDFs/
+      --output-dir data/parsed/
+      --format both
+    deps:
+      - data/raw/${ticker}/${form_type}/PDFs/
+    outs:
+      - data/parsed/*/docling/
+    desc: "Extract documents using docling as baseline for comparison"
+
+  # Stage 6: Export and generate comparison reports
+  export:
+    cmd: >
+      python scripts/export_stage.py
+      --input-dir data/parsed/
+      --output-dir data/exports/
+      --formats json,csv,markdown
+      --generate-comparison ${generate_comparison}
+    params:
+      - generate_comparison
+    deps:
+      - data/parsed/
+      - data/parsed/*/lmv3/
+      - data/parsed/*/docling/
+      - data/parsed/*/tables/
+    outs:
+      - data/exports/
+      - data/exports/comparison_reports/
+    metrics:
+      - data/exports/metrics.json
+    plots:
+      - data/exports/plots/
+    desc: "Export processed data and generate comparison reports with quality metrics"
+
+# Pipeline parameters with defaults
+params:
+  - ticker: "MSFT"
+  - form_type: "10-K" 
+  - num_filings: 3
+  - use_gpu: false
+  - layout_parsing: true
+  - generate_comparison: true
+
+# Global pipeline artifacts tracking
+artifacts:
+  raw_data:
+    path: data/raw/
+    type: model
+    desc: "Raw SEC filings and converted PDFs"
+  
+  parsed_data:
+    path: data/parsed/
+    type: model  
+    desc: "Parsed text, tables, layouts from multiple extractors"
+    
+  final_exports:
+    path: data/exports/
+    type: model
+    desc: "Final processed outputs and comparison reports"
+
+# Data version control for key directories
+vars:
+  - data_version: "v1.0"
+  - pipeline_version: "v1.0"

@@ -1,8 +1,3 @@
-Got it ✅
-Here’s your **final full README.md** with the uploaded architecture image properly integrated, polished formatting, and all the details we’ve discussed.
-
----
-
 # 📄 PDF Parser
 
 **A comprehensive PDF parsing system for extracting structured data from complex financial documents, particularly SEC filings (10-K, 10-Q, etc.).**

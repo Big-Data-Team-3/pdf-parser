@@ -964,10 +964,15 @@ class PDFParser:
 
 if __name__ == "__main__":
     parser = PDFParser(table_extractor="tabula")
+    args = argparse.ArgumentParser()
+    args.add_argument("--input-dir", required=True)
+    args.add_argument("--output-dir", required=True)
+    args.add_argument("--output-format", required=True)
+    args = args.parse_args()
     parser.parse(
-        input_source="data/raw/MSFT/10-K/PDFs/MSFT_10-K_20230727_000095017023035122.pdf",
-        output_dir="data/parsed",
-        output_format="json"
+        input_source=args.input_dir,
+        output_dir=args.output_dir,
+        output_format=args.output_format
     )
 
 

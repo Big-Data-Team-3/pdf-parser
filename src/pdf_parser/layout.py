@@ -32,6 +32,7 @@ We will use the LayoutLMv3 model for this task.
 '''
 
 # region imports
+import argparse
 import os
 import json
 from pathlib import Path
@@ -39,6 +40,7 @@ import pandas as pd
 import numpy as np
 from transformers import LayoutLMv3Processor, LayoutLMv3ForTokenClassification
 import torch
+import sys
 from PIL import Image
 # endregion
 
@@ -1114,12 +1116,25 @@ def save_inference_results(inference_data, output_dir:str):
 # region main
 if __name__ == "__main__":
     # load the data from a given target folder
-    target_folder = "data/parsed/MSFT_10-K_20230727_000095017023035122"
-    loaded_data = load_data(target_folder)
-    # perform data preprocessing
-    preprocessed_data = preprocess_data(loaded_data, use_layout_parsing=True)
-    # perform inference
-    inference_data = perform_inference(preprocessed_data, layout_parsing=True)
-    # save the results
-    save_inference_results(inference_data, output_dir=target_folder)
+    args = argparse.ArgumentParser()
+    args.add_argument("--input-dir", required=True)
+    args.add_argument("--output-dir", required=True)
+    args.add_argument("--output-format", required=True)
+    args = args.parse_args()
+    # Loop through all the PDF files in the input directory to make target_folders and seqeuntially generate output JSON files
+    pdf_files = [f for f in os.listdir(args.input_dir) if f.lower().endswith('.pdf')]
+    if not pdf_files:
+        print("No PDF files found in input directory")
+        sys.exit(1)
+    
+    for pdf_file in pdf_files:
+        base_name = os.path.splitext(pdf_file)[0]
+        target_folder = os.path.join(args.output_dir, base_name)
+        loaded_data = load_data(target_folder)
+        # perform data preprocessing
+        preprocessed_data = preprocess_data(loaded_data, use_layout_parsing=True)
+        # perform inference
+        inference_data = perform_inference(preprocessed_data, layout_parsing=True)
+        # save the results
+        save_inference_results(inference_data, output_dir=target_folder)
 # endregion

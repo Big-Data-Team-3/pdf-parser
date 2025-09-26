@@ -407,7 +407,7 @@ def main():
     parser.add_argument("--ticker", required=True, help="Stock ticker symbol (e.g., MSFT)")
     parser.add_argument("--form-type", default="10-K", help="SEC form type (default: 10-K)")
     parser.add_argument("--num-filings", type=int, default=3, help="Number of filings to download (default: 3)")
-    parser.add_argument("--output-dir", required=True, help="Output directory for downloaded files")
+    parser.add_argument("--output-dir", default="data/raw", required=True, help="Output directory for downloaded files")
     parser.add_argument("--api-key", help="SEC API key (or set SEC_API_KEY env var)")
     parser.add_argument("--user-agent", help="User-Agent string for SEC requests")
     parser.add_argument("--skip-xbrl", action="store_true", help="Skip XBRL download")

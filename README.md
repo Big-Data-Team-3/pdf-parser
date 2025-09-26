@@ -6,7 +6,7 @@ This project provides **multi-engine parsing, unified APIs, and quality assessme
 
  **GitHub Repo:** [Big-Data-Team-3/pdf-parser](https://github.com/Big-Data-Team-3/pdf-parser.git)
  
- **Codelab: **  https://codelabs-preview.appspot.com/?file_id=1aaI--RF5ID99gkCwUVNLQulwxTSsljwvhOqxbY8q3V8#0
+- **Interactive Tutorial**: [Google Codelabs - PDF Parser Guide](https://codelabs-preview.appspot.com/?file_id=1aaI--RF5ID99gkCwUVNLQulwxTSsljwvhOqxbY8q3V8#0)
 ---
 
 ## 🌟 Project Description

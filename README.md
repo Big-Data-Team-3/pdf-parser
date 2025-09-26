@@ -154,7 +154,6 @@ It combines **multiple extraction engines** (rule-based + deep learning + OCR) t
 * Python 3.9+
 * [Tesseract OCR](https://tesseract-ocr.github.io/) installed
 * Java (for Tabula)
-* Docker & Docker Compose
 * (Optional) GCP for Document AI integration
 
 ### **Clone & Setup**
@@ -187,6 +186,7 @@ python notebooks/extract_table.py \
 
 ```
 pdf_parser/
+├── docs/                # architecture+schema
 ├── data/
 │   ├── raw/             # Raw PDFs + XBRL
 │   ├── parsed/          # Parsed text, tables, metadata

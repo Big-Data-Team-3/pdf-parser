@@ -1,0 +1,133 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Generated schema for Root",
+    "type": "object",
+    "properties": {
+      "file_info": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "total_pages": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "filename",
+          "total_pages"
+        ]
+      },
+      "page_layouts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "page_number": {
+              "type": "number"
+            },
+            "page_width": {
+              "type": "number"
+            },
+            "page_height": {
+              "type": "number"
+            },
+            "words": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "bbox": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "required": [
+                  "text",
+                  "bbox"
+                ]
+              }
+            }
+          },
+          "required": [
+            "page_number",
+            "page_width",
+            "page_height",
+            "words"
+          ]
+        }
+      },
+      "processing_info": {
+        "type": "object",
+        "properties": {
+          "total_pages": {
+            "type": "number"
+          },
+          "total_words": {
+            "type": "number"
+          },
+          "source_metadata": {
+            "type": "object",
+            "properties": {
+              "processing_time": {
+                "type": "number"
+              },
+              "total_word_boxes": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "processing_time",
+              "total_word_boxes"
+            ]
+          }
+        },
+        "required": [
+          "total_pages",
+          "total_words",
+          "source_metadata"
+        ]
+      },
+      "tables_info": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "page_number": {
+              "type": "number"
+            },
+            "table_id": {
+              "type": "string"
+            },
+            "num_rows": {
+              "type": "number"
+            },
+            "num_columns": {
+              "type": "number"
+            },
+            "is_valid": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "page_number",
+            "table_id",
+            "num_rows",
+            "num_columns",
+            "is_valid"
+          ]
+        }
+      }
+    },
+    "required": [
+      "file_info",
+      "page_layouts",
+      "processing_info",
+      "tables_info"
+    ]
+  }

@@ -1,0 +1,61 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Generated schema for Root",
+    "type": "object",
+    "properties": {
+      "table_id": {
+        "type": "string"
+      },
+      "file_id": {
+        "type": "string"
+      },
+      "table_index": {
+        "type": "number"
+      },
+      "csv_path": {
+        "type": "string"
+      },
+      "csv_sha256": {
+        "type": "string"
+      },
+      "page_number": {
+        "type": "number"
+      },
+      "num_rows": {
+        "type": "number"
+      },
+      "num_columns": {
+        "type": "number"
+      },
+      "is_valid_table": {
+        "type": "boolean"
+      },
+      "validation_reason": {
+        "type": "string"
+      },
+      "numeric_cell_ratio": {
+        "type": "number"
+      },
+      "empty_cell_ratio": {
+        "type": "number"
+      },
+      "extraction_timestamp": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "table_id",
+      "file_id",
+      "table_index",
+      "csv_path",
+      "csv_sha256",
+      "page_number",
+      "num_rows",
+      "num_columns",
+      "is_valid_table",
+      "validation_reason",
+      "numeric_cell_ratio",
+      "empty_cell_ratio",
+      "extraction_timestamp"
+    ]
+  }

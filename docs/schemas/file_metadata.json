@@ -1,0 +1,96 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Generated schema for Root",
+    "type": "object",
+    "properties": {
+      "filename": {
+        "type": "string"
+      },
+      "total_pages": {
+        "type": "number"
+      },
+      "pdfplumber_pages": {
+        "type": "number"
+      },
+      "ocr_pages": {
+        "type": "number"
+      },
+      "poor_quality_pages": {
+        "type": "number"
+      },
+      "total_word_boxes": {
+        "type": "number"
+      },
+      "processing_time": {
+        "type": "number"
+      },
+      "page_details": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "page_number": {
+              "type": "number"
+            },
+            "method": {
+              "type": "string"
+            },
+            "quality_flag": {
+              "type": "boolean"
+            },
+            "quality_score": {
+              "type": "number"
+            },
+            "extraction_timestamp": {
+              "type": "string"
+            },
+            "word_count": {
+              "type": "number"
+            },
+            "layout_type": {
+              "type": "string"
+            },
+            "estimated_columns": {
+              "type": "number"
+            },
+            "text_density": {
+              "type": "number"
+            },
+            "char_count": {
+              "type": "number"
+            },
+            "line_count": {
+              "type": "number"
+            },
+            "char_density": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "page_number",
+            "method",
+            "quality_flag",
+            "quality_score",
+            "extraction_timestamp",
+            "word_count",
+            "layout_type",
+            "estimated_columns",
+            "text_density",
+            "char_count",
+            "line_count",
+            "char_density"
+          ]
+        }
+      }
+    },
+    "required": [
+      "filename",
+      "total_pages",
+      "pdfplumber_pages",
+      "ocr_pages",
+      "poor_quality_pages",
+      "total_word_boxes",
+      "processing_time",
+      "page_details"
+    ]
+  }

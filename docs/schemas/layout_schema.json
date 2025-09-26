@@ -1,0 +1,276 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Generated schema for Root",
+    "type": "object",
+    "properties": {
+      "file_info": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "processing_date": {
+            "type": "string"
+          },
+          "total_pages": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "filename",
+          "processing_date",
+          "total_pages"
+        ]
+      },
+      "page_layouts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "page_number": {
+              "type": "number"
+            },
+            "page_width": {
+              "type": "number"
+            },
+            "page_height": {
+              "type": "number"
+            },
+            "word_boxes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "x0": {
+                    "type": "number"
+                  },
+                  "x1": {
+                    "type": "number"
+                  },
+                  "width": {
+                    "type": "number"
+                  },
+                  "confidence": {
+                    "type": "number"
+                  },
+                  "page_number": {
+                    "type": "number"
+                  },
+                  "word_index": {
+                    "type": "number"
+                  },
+                  "doctop": {
+                    "type": "number"
+                  },
+                  "upright": {
+                    "type": "boolean"
+                  },
+                  "top": {
+                    "type": "number"
+                  },
+                  "bottom": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "text",
+                  "x0",
+                  "x1",
+                  "width",
+                  "page_number",
+                  "word_index",
+                  "top",
+                  "bottom"
+                ]
+              }
+            },
+            "text_blocks": {},
+            "reading_order": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "layout_analysis": {
+              "type": "object",
+              "properties": {
+                "columns": {
+                  "type": "number"
+                },
+                "rows": {
+                  "type": "number"
+                },
+                "text_density": {
+                  "type": "number"
+                },
+                "layout_type": {
+                  "type": "string"
+                },
+                "reading_order": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "aspect_ratio": {
+                  "type": "number"
+                },
+                "text_flow_analysis": {
+                  "type": "object",
+                  "properties": {
+                    "x_spread": {
+                      "type": "number"
+                    },
+                    "y_spread": {
+                      "type": "number"
+                    },
+                    "word_count": {
+                      "type": "number"
+                    },
+                    "unique_x_positions": {
+                      "type": "number"
+                    },
+                    "unique_y_positions": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x_spread",
+                    "y_spread",
+                    "word_count",
+                    "unique_x_positions",
+                    "unique_y_positions"
+                  ]
+                }
+              },
+              "required": [
+                "columns",
+                "rows",
+                "text_density",
+                "layout_type",
+                "reading_order",
+                "aspect_ratio",
+                "text_flow_analysis"
+              ]
+            }
+          },
+          "required": [
+            "page_number",
+            "page_width",
+            "page_height",
+            "word_boxes",
+            "text_blocks",
+            "reading_order",
+            "layout_analysis"
+          ]
+        }
+      },
+      "document_analysis": {
+        "type": "object",
+        "properties": {
+          "document_type": {
+            "type": "string"
+          },
+          "most_common_layout": {
+            "type": "string"
+          },
+          "average_columns": {
+            "type": "number"
+          },
+          "average_text_density": {
+            "type": "number"
+          },
+          "average_font_size": {
+            "type": "number"
+          },
+          "layout_distribution": {
+            "type": "object",
+            "properties": {
+              "sparse": {
+                "type": "number"
+              },
+              "dense_multi_column": {
+                "type": "number"
+              },
+              "multi_column": {
+                "type": "number"
+              },
+              "very_sparse": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "sparse",
+              "dense_multi_column",
+              "multi_column",
+              "very_sparse"
+            ]
+          },
+          "column_distribution": {
+            "type": "object",
+            "properties": {
+              "1": {
+                "type": "number"
+              },
+              "2": {
+                "type": "number"
+              },
+              "3": {
+                "type": "number"
+              },
+              "6": {
+                "type": "number"
+              },
+              "8": {
+                "type": "number"
+              },
+              "9": {
+                "type": "number"
+              },
+              "10": {
+                "type": "number"
+              },
+              "11": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "1",
+              "2",
+              "3",
+              "6",
+              "8",
+              "9",
+              "10",
+              "11"
+            ]
+          },
+          "total_pages": {
+            "type": "number"
+          },
+          "pages_with_content": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "document_type",
+          "most_common_layout",
+          "average_columns",
+          "average_text_density",
+          "average_font_size",
+          "layout_distribution",
+          "column_distribution",
+          "total_pages",
+          "pages_with_content"
+        ]
+      }
+    },
+    "required": [
+      "file_info",
+      "page_layouts",
+      "document_analysis"
+    ]
+  }

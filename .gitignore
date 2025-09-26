@@ -32,9 +32,15 @@ data/raw/
 data/parsed/
 data/xbrl/
 data/logs/
+data/tables/
 
 # -----------------------------
 # OS-specific
 # -----------------------------
 .DS_Store
 Thumbs.db
+
+# -----------------------------
+# environment variables
+# -----------------------------
+.env

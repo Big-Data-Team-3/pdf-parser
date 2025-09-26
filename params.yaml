@@ -1,0 +1,5 @@
+ticker: "MSFT"
+form_type: "10-K"
+num_filings: 3
+output_dir: "data/raw"
+output_format: "json"

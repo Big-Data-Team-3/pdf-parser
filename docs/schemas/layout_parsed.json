@@ -1,0 +1,556 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Generated schema for Root",
+    "type": "object",
+    "properties": {
+      "inference_type": {
+        "type": "string"
+      },
+      "file_info": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "total_pages": {
+            "type": "number"
+          },
+          "document_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "total_pages",
+          "document_type"
+        ]
+      },
+      "document_structure": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "page_number": {
+              "type": "number"
+            },
+            "page_dimensions": {
+              "type": "object",
+              "properties": {
+                "width": {
+                  "type": "number"
+                },
+                "height": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "width",
+                "height"
+              ]
+            },
+            "layout_type": {
+              "type": "string"
+            },
+            "columns": {
+              "type": "number"
+            },
+            "text_density": {
+              "type": "number"
+            },
+            "elements": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "element_id": {
+                    "type": "string"
+                  },
+                  "element_type": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "bbox": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "line_count": {
+                        "type": "number"
+                      },
+                      "word_count": {
+                        "type": "number"
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "line_count",
+                      "word_count",
+                      "confidence"
+                    ]
+                  }
+                },
+                "required": [
+                  "element_id",
+                  "element_type",
+                  "text",
+                  "bbox",
+                  "properties"
+                ]
+              }
+            },
+            "reading_order": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          },
+          "required": [
+            "page_number",
+            "page_dimensions",
+            "layout_type",
+            "columns",
+            "text_density",
+            "elements",
+            "reading_order"
+          ]
+        }
+      },
+      "enhanced_elements": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "element_id": {
+              "type": "string"
+            },
+            "element_type": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "bbox": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "properties": {
+              "type": "object",
+              "properties": {
+                "line_count": {
+                  "type": "number"
+                },
+                "word_count": {
+                  "type": "number"
+                },
+                "confidence": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "line_count",
+                "word_count",
+                "confidence"
+              ]
+            },
+            "page_number": {
+              "type": "number"
+            },
+            "layout_context": {
+              "type": "object",
+              "properties": {
+                "width_ratio": {
+                  "type": "number"
+                },
+                "height_ratio": {
+                  "type": "number"
+                },
+                "x_position": {
+                  "type": "number"
+                },
+                "y_position": {
+                  "type": "number"
+                },
+                "is_full_width": {
+                  "type": "boolean"
+                },
+                "is_left_aligned": {
+                  "type": "boolean"
+                },
+                "is_centered": {
+                  "type": "boolean"
+                },
+                "is_right_aligned": {
+                  "type": "boolean"
+                },
+                "vertical_position": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "width_ratio",
+                "height_ratio",
+                "x_position",
+                "y_position",
+                "is_full_width",
+                "is_left_aligned",
+                "is_centered",
+                "is_right_aligned",
+                "vertical_position"
+              ]
+            },
+            "semantic_role": {
+              "type": "string"
+            },
+            "reading_order": {
+              "type": "number"
+            },
+            "ml_predictions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "word": {
+                    "type": "string"
+                  },
+                  "bbox": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "predicted_label": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "word",
+                  "bbox",
+                  "predicted_label",
+                  "confidence"
+                ]
+              }
+            },
+            "ml_analysis": {
+              "type": "object",
+              "properties": {
+                "avg_confidence": {
+                  "type": "number"
+                },
+                "dominant_label": {
+                  "type": "string"
+                },
+                "dominant_labels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "label_distribution": {
+                  "type": "object",
+                  "properties": {
+                    "I-ANSWER": {
+                      "type": "number"
+                    },
+                    "B-TABLE": {
+                      "type": "number"
+                    },
+                    "O": {
+                      "type": "number"
+                    },
+                    "I-QUESTION": {
+                      "type": "number"
+                    },
+                    "I-HEADER": {
+                      "type": "number"
+                    },
+                    "B-HEADER": {
+                      "type": "number"
+                    },
+                    "B-QUESTION": {
+                      "type": "number"
+                    },
+                    "B-LIST": {
+                      "type": "number"
+                    },
+                    "B-ANSWER": {
+                      "type": "number"
+                    },
+                    "B-FOOTER": {
+                      "type": "number"
+                    },
+                    "I-FOOTER": {
+                      "type": "number"
+                    },
+                    "I-LIST": {
+                      "type": "number"
+                    },
+                    "I-TABLE": {
+                      "type": "number"
+                    }
+                  },
+                  "required": []
+                },
+                "total_words": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "avg_confidence",
+                "dominant_labels",
+                "label_distribution"
+              ]
+            },
+            "confidence_score": {
+              "type": "number"
+            },
+            "predicted_labels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "hybrid_classification": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "element_id",
+            "element_type",
+            "text",
+            "bbox",
+            "properties",
+            "page_number",
+            "layout_context",
+            "semantic_role",
+            "reading_order",
+            "ml_predictions",
+            "ml_analysis",
+            "confidence_score",
+            "predicted_labels",
+            "hybrid_classification"
+          ]
+        }
+      },
+      "model_predictions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "page_number": {
+              "type": "number"
+            },
+            "predictions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "word": {
+                    "type": "string"
+                  },
+                  "bbox": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "predicted_label": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "word",
+                  "bbox",
+                  "predicted_label",
+                  "confidence"
+                ]
+              }
+            },
+            "element_count": {
+              "type": "number"
+            },
+            "word_count": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "page_number",
+            "predictions",
+            "element_count",
+            "word_count"
+          ]
+        }
+      },
+      "layout_analysis": {
+        "type": "object",
+        "properties": {
+          "total_elements": {
+            "type": "number"
+          },
+          "element_type_distribution": {
+            "type": "object",
+            "properties": {
+              "header": {
+                "type": "number"
+              },
+              "paragraph": {
+                "type": "number"
+              },
+              "fragment": {
+                "type": "number"
+              },
+              "list_item": {
+                "type": "number"
+              },
+              "table_reference": {
+                "type": "number"
+              },
+              "title": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "header",
+              "paragraph",
+              "fragment",
+              "list_item",
+              "table_reference",
+              "title"
+            ]
+          },
+          "semantic_role_distribution": {
+            "type": "object",
+            "properties": {
+              "page_header": {
+                "type": "number"
+              },
+              "short_text": {
+                "type": "number"
+              },
+              "body_text": {
+                "type": "number"
+              },
+              "fragment": {
+                "type": "number"
+              },
+              "enumerated_item": {
+                "type": "number"
+              },
+              "table_link": {
+                "type": "number"
+              },
+              "title": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "page_header",
+              "short_text",
+              "body_text",
+              "fragment",
+              "enumerated_item",
+              "table_link",
+              "title"
+            ]
+          },
+          "layout_patterns": {
+            "type": "object",
+            "properties": {
+              "full_width_elements": {
+                "type": "number"
+              },
+              "multi_column_indicators": {
+                "type": "number"
+              },
+              "centered_elements": {
+                "type": "number"
+              },
+              "left_aligned_elements": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "full_width_elements",
+              "multi_column_indicators",
+              "centered_elements",
+              "left_aligned_elements"
+            ]
+          },
+          "layout_characteristics": {
+            "type": "object",
+            "properties": {
+              "predominant_alignment": {
+                "type": "string"
+              },
+              "layout_complexity": {
+                "type": "string"
+              },
+              "structure_type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "predominant_alignment",
+              "layout_complexity",
+              "structure_type"
+            ]
+          },
+          "document_flow": {
+            "type": "object",
+            "properties": {
+              "reading_flow": {
+                "type": "string"
+              },
+              "section_breaks": {
+                "type": "number"
+              },
+              "column_changes": {
+                "type": "number"
+              },
+              "hierarchical_depth": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "reading_flow",
+              "section_breaks",
+              "column_changes",
+              "hierarchical_depth"
+            ]
+          }
+        },
+        "required": [
+          "total_elements",
+          "element_type_distribution",
+          "semantic_role_distribution",
+          "layout_patterns",
+          "layout_characteristics",
+          "document_flow"
+        ]
+      }
+    },
+    "required": [
+      "inference_type",
+      "file_info",
+      "document_structure",
+      "enhanced_elements",
+      "model_predictions",
+      "layout_analysis"
+    ]
+  }

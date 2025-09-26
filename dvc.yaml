@@ -1,0 +1,66 @@
+stages:
+  download:
+    cmd: >
+      python src/pdf_parser/download_stage.py
+      --ticker ${ticker}
+      --form-type ${form_type}
+      --num-filings ${num_filings}
+      --output-dir ${output_dir}
+    params:
+      - ticker
+      - form_type
+      - num_filings
+      - output_dir
+    outs:
+      - data/raw/${ticker}/${form_type}/PDFs/
+      - data/raw/${ticker}/${form_type}/XBRL/
+    desc: "Download SEC filings and convert to PDF format using sec-api"
+  parse_integrated:
+    cmd: >
+      python src/pdf_parser/parser.py
+      --input-dir data/raw/${ticker}/${form_type}/PDFs/
+      --output-dir data/parsed/
+      --output-format json
+    deps:
+      - data/raw/${ticker}/${form_type}/PDFs/
+      - src/pdf_parser/parser.py
+    outs:
+      - data/parsed/
+    desc: "Extract text, word boxes, and layout using pdfplumber with OCR fallback along with CSV files using "
+  layout:
+    cmd: >
+      python src/pdf_parser/layout.py
+      --input-dir data/raw/${ticker}/${form_type}/PDFs/
+      --output-dir data/parsed/
+      --output-format json
+    deps:
+      - data/raw/${ticker}/${form_type}/PDFs/
+      - src/pdf_parser/layout.py
+    desc: "Perform layout analysis on the parsed data using a layout parser as well as LayoutLMv3"
+  docling:
+    cmd: >
+      python src/pdf_parser/_docling.py
+      --input-dir data/raw/${ticker}/${form_type}/PDFs/
+      --output-dir data/parsed/
+    deps:
+      - data/raw/${ticker}/${form_type}/PDFs/
+      - src/pdf_parser/_docling.py
+    desc: "Convert PDF to markdown and JSON using Docling for comparison"
+  export:
+    cmd: >
+      python src/pdf_parser/export_stage.py
+      --parsed-dir data/parsed/
+    deps:
+      - data/parsed/
+      - src/pdf_parser/export_stage.py
+      - notebooks/evaluation_wer.ipynb
+          
+    desc: >
+      Consolidate and export all PDF parsing outputs including:
+      - Text extraction results (.txt files)
+      - Tabula table extraction (CSV + metadata)
+      - Markdown export from inference data
+      - WER evaluation metrics from notebook
+      Creates unified JSON export with complete parsing pipeline results.
+
+  

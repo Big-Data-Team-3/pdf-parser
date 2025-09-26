@@ -1,0 +1,102 @@
+schema: '2.0'
+stages:
+  download:
+    cmd: "python src/pdf_parser/download_stage.py --ticker MSFT --form-type 10-K --num-filings
+      3 --output-dir data/raw\n"
+    params:
+      params.yaml:
+        form_type: 10-K
+        num_filings: 3
+        output_dir: data/raw
+        ticker: MSFT
+    outs:
+    - path: data/raw/MSFT/10-K/PDFs/
+      hash: md5
+      md5: 777c8ea9d748c28fc730d62dc6815832.dir
+      size: 33945018
+      nfiles: 3
+    - path: data/raw/MSFT/10-K/XBRL/
+      hash: md5
+      md5: 07db3320eba2dd8b10523a8d0964dabe.dir
+      size: 34006151
+      nfiles: 39
+  parse:
+    cmd: "python src/pdf_parser/parser.py --input-dir data/raw/MSFT/10-K/PDFs/ --output-dir
+      data/parsed/ --output-format json --type parse\n"
+    deps:
+    - path: data/raw/MSFT/10-K/PDFs/
+      hash: md5
+      md5: 777c8ea9d748c28fc730d62dc6815832.dir
+      size: 33945018
+      nfiles: 3
+    - path: src/pdf_parser/parser.py
+      hash: md5
+      md5: ec0a6c27dbef9a44313230767ad5c7e6
+      size: 40012
+    outs:
+    - path: data/parsed/
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+  parse_integrated:
+    cmd: "python src/pdf_parser/parser.py --input-dir data/raw/MSFT/10-K/PDFs/ --output-dir
+      data/parsed/ --output-format json\n"
+    deps:
+    - path: data/raw/MSFT/10-K/PDFs/
+      hash: md5
+      md5: 777c8ea9d748c28fc730d62dc6815832.dir
+      size: 33945018
+      nfiles: 3
+    - path: src/pdf_parser/parser.py
+      hash: md5
+      md5: cea8a72f27daa10641234c737c85c994
+      size: 38920
+    outs:
+    - path: data/parsed/
+      hash: md5
+      md5: 0e6a3d0341bd87ffc0ef199a24fd5f9a.dir
+      size: 116052489
+      nfiles: 206
+  layout:
+    cmd: "python src/pdf_parser/layout.py --input-dir data/raw/MSFT/10-K/PDFs/ --output-dir
+      data/parsed/ --output-format json\n"
+    deps:
+    - path: data/raw/MSFT/10-K/PDFs/
+      hash: md5
+      md5: 777c8ea9d748c28fc730d62dc6815832.dir
+      size: 33945018
+      nfiles: 3
+    - path: src/pdf_parser/layout.py
+      hash: md5
+      md5: 2a601637b73b660bb8cf555f4bf6680e
+      size: 47683
+  docling:
+    cmd: "python src/pdf_parser/_docling.py --input-dir data/raw/MSFT/10-K/PDFs/ --output-dir
+      data/parsed/\n"
+    deps:
+    - path: data/raw/MSFT/10-K/PDFs/
+      hash: md5
+      md5: 777c8ea9d748c28fc730d62dc6815832.dir
+      size: 33945018
+      nfiles: 3
+    - path: src/pdf_parser/_docling.py
+      hash: md5
+      md5: dd66dacf77e4e2f424eb89e8ae4a1f24
+      size: 1772
+  export:
+    cmd: "python src/pdf_parser/export_stage.py --parsed-dir data/parsed/\n"
+    deps:
+    - path: data/parsed/
+      hash: md5
+      md5: 0e6a3d0341bd87ffc0ef199a24fd5f9a.dir
+      size: 116052489
+      nfiles: 206
+    - path: notebooks/evaluation_wer.ipynb
+      hash: md5
+      md5: 6fd2b243bf27a292964a04d58cc18e2c
+      size: 35372
+    - path: src/pdf_parser/export_stage.py
+      hash: md5
+      md5: 0fc6cedb95f7a73ab48dc0f1c7f59370
+      size: 3729

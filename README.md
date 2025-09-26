@@ -149,7 +149,7 @@ It combines **multiple extraction engines** (rule-based + deep learning + OCR) t
 *SEC EDGAR Document Processing Pipeline – Complete Architecture*
 
 ---
-## 🌟 Project Description
+## 🌟 Team Member
 1. Sathwik Matcha- 33%
 2. Divyans Jemni- 33%
 3. Riyanshi Kedia- 33%

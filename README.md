@@ -7,6 +7,8 @@ This project provides **multi-engine parsing, unified APIs, and quality assessme
  **GitHub Repo:** [Big-Data-Team-3/pdf-parser](https://github.com/Big-Data-Team-3/pdf-parser.git)
  
 - **Interactive Tutorial**: [Google Codelabs - PDF Parser Guide](https://codelabs-preview.appspot.com/?file_id=1aaI--RF5ID99gkCwUVNLQulwxTSsljwvhOqxbY8q3V8#0)
+
+- **Recording Link** : [Video Recording](https://drive.google.com/drive/folders/1ovXMpd7xj6oKaeUFmPXziRpBvTstffFq?usp=drive_link)
 ---
 
 ## 🌟 Project Description
@@ -147,6 +149,11 @@ It combines **multiple extraction engines** (rule-based + deep learning + OCR) t
 *SEC EDGAR Document Processing Pipeline – Complete Architecture*
 
 ---
+## 🌟 Project Description
+1. Sathwik Matcha- 33%
+2. Divyans Jemni- 33%
+3. Riyanshi Kedia- 33%
+
 
 ## 🚀 Getting Started
 

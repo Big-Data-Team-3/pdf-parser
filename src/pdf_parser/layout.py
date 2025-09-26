@@ -509,6 +509,375 @@ def perform_inference(preprocessed_data, use_gpu:bool=False, layout_parsing:bool
         Dictionary containing inference results with token classifications and layout analysis
     '''
     
+    def _analyze_element_layout(element, page_structure):
+        """Analyze layout properties of an element within page context."""
+        bbox = element.get("bbox", [0, 0, 0, 0])
+        page_dims = page_structure.get("page_dimensions", {"width": 612, "height": 792})
+        
+        # Calculate layout properties
+        width_ratio = (bbox[2] - bbox[0]) / 1000  # Normalized width
+        height_ratio = (bbox[3] - bbox[1]) / 1000  # Normalized height
+        x_position = bbox[0] / 1000  # Left margin ratio
+        y_position = bbox[1] / 1000  # Top position ratio
+        
+        # Determine layout characteristics
+        layout_analysis = {
+            "width_ratio": width_ratio,
+            "height_ratio": height_ratio,
+            "x_position": x_position,
+            "y_position": y_position,
+            "is_full_width": width_ratio > 0.8,
+            "is_left_aligned": x_position < 0.2,
+            "is_centered": 0.3 < x_position < 0.7,
+            "is_right_aligned": x_position > 0.8,
+            "vertical_position": "top" if y_position < 0.3 else "middle" if y_position < 0.7 else "bottom"
+        }
+        
+        return layout_analysis
+
+    def _determine_semantic_role(element, page_structure):
+        """Determine the semantic role of an element in document structure."""
+        element_type = element.get("element_type", "paragraph")
+        text = element.get("text", "").lower()
+        layout_context = element.get("layout_context", {})
+        
+        # Enhanced semantic classification
+        if element_type == "header":
+            if layout_context.get("is_centered", False):
+                return "main_title"
+            elif layout_context.get("y_position", 0) < 0.2:
+                return "page_header"
+            else:
+                return "section_header"
+        
+        elif element_type == "paragraph":
+            if any(keyword in text for keyword in ["table", "schedule", "exhibit"]):
+                return "table_caption"
+            elif len(text) < 100:
+                return "short_text"
+            else:
+                return "body_text"
+        
+        elif element_type == "list_item":
+            return "enumerated_item"
+        
+        elif element_type == "table_reference":
+            return "table_link"
+        
+        return element_type
+
+    def _calculate_reading_order(element, all_elements):
+        """Calculate reading order position within the page."""
+        element_bbox = element.get("bbox", [0, 0, 0, 0])
+        
+        # Sort elements by reading order (top to bottom, left to right)
+        sorted_elements = sorted(all_elements, key=lambda e: (e.get("bbox", [0, 0, 0, 0])[1], e.get("bbox", [0, 0, 0, 0])[0]))
+        
+        try:
+            return sorted_elements.index(element) + 1
+        except ValueError:
+            return len(all_elements)
+
+    def _perform_document_layout_analysis(all_elements):
+        """Perform comprehensive document-level layout analysis."""
+        if not all_elements:
+            return {}
+        
+        # Analyze element distribution
+        element_types = {}
+        semantic_roles = {}
+        layout_patterns = {
+            "full_width_elements": 0,
+            "multi_column_indicators": 0,
+            "centered_elements": 0,
+            "left_aligned_elements": 0
+        }
+        
+        for element in all_elements:
+            # Count element types
+            elem_type = element.get("element_type", "unknown")
+            element_types[elem_type] = element_types.get(elem_type, 0) + 1
+            
+            # Count semantic roles
+            semantic_role = element.get("semantic_role", "unknown")
+            semantic_roles[semantic_role] = semantic_roles.get(semantic_role, 0) + 1
+            
+            # Analyze layout patterns
+            layout_context = element.get("layout_context", {})
+            if layout_context.get("is_full_width", False):
+                layout_patterns["full_width_elements"] += 1
+            if layout_context.get("is_centered", False):
+                layout_patterns["centered_elements"] += 1
+            if layout_context.get("is_left_aligned", False):
+                layout_patterns["left_aligned_elements"] += 1
+        
+        # Determine document layout characteristics
+        total_elements = len(all_elements)
+        layout_characteristics = {
+            "predominant_alignment": "left" if layout_patterns["left_aligned_elements"] > total_elements * 0.6 else "mixed",
+            "layout_complexity": "simple" if len(element_types) <= 3 else "complex",
+            "structure_type": "formal" if semantic_roles.get("section_header", 0) > 5 else "informal"
+        }
+        
+        return {
+            "total_elements": total_elements,
+            "element_type_distribution": element_types,
+            "semantic_role_distribution": semantic_roles,
+            "layout_patterns": layout_patterns,
+            "layout_characteristics": layout_characteristics,
+            "document_flow": _analyze_document_flow(all_elements)
+        }
+
+    def _analyze_document_flow(all_elements):
+        """Analyze the flow and structure of the document."""
+        flow_analysis = {
+            "reading_flow": "top_to_bottom",
+            "section_breaks": 0,
+            "column_changes": 0,
+            "hierarchical_depth": 0
+        }
+        
+        # Analyze hierarchical structure
+        headers = [e for e in all_elements if e.get("element_type") == "header"]
+        flow_analysis["hierarchical_depth"] = len(set(h.get("semantic_role") for h in headers))
+        
+        # Count section breaks (large vertical gaps)
+        for i in range(1, len(all_elements)):
+            prev_element = all_elements[i-1]
+            curr_element = all_elements[i]
+            
+            prev_y = prev_element.get("bbox", [0, 0, 0, 0])[3]  # bottom of previous
+            curr_y = curr_element.get("bbox", [0, 0, 0, 0])[1]  # top of current
+            
+            # Large gap indicates section break
+            if curr_y - prev_y > 50:  # Threshold for section break
+                flow_analysis["section_breaks"] += 1
+        
+        return flow_analysis
+
+    def _perform_page_inference(processor, model, device, words, boxes, id2label):
+        """
+        Perform LayoutLMv3 inference on a single page.
+        
+        Args:
+            processor: LayoutLMv3 processor
+            model: LayoutLMv3 model
+            device: torch device
+            words: List of word strings
+            boxes: List of bounding boxes [x0, y0, x1, y1] normalized to 0-1000
+            id2label: Label mapping dictionary
+            
+        Returns:
+            List of predictions for each word
+        """
+        try:
+            # Prepare inputs for LayoutLMv3
+            # Create a dummy image (white background) since we're not using OCR
+            dummy_image = Image.new('RGB', (1000, 1000), color='white')
+            
+            # Process the inputs
+            encoding = processor(
+                dummy_image,
+                words,
+                boxes=boxes,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=512
+            )
+            
+            # Move to device
+            for key in encoding:
+                if isinstance(encoding[key], torch.Tensor):
+                    encoding[key] = encoding[key].to(device)
+            
+            # Perform inference
+            with torch.no_grad():
+                outputs = model(**encoding)
+                predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
+                predicted_token_class = predictions.argmax(dim=-1)
+            
+            # Convert predictions to labels
+            predicted_labels = []
+            confidence_scores = []
+            
+            # Get the actual sequence length (excluding padding)
+            input_ids = encoding["input_ids"].squeeze()
+            attention_mask = encoding["attention_mask"].squeeze()
+            
+            for i, (token_id, attention) in enumerate(zip(input_ids, attention_mask)):
+                if attention == 0:  # Skip padding tokens
+                    continue
+                    
+                if i < len(predicted_token_class[0]):
+                    pred_id = predicted_token_class[0][i].item()
+                    confidence = predictions[0][i][pred_id].item()
+                    
+                    predicted_labels.append(id2label.get(pred_id, "O"))
+                    confidence_scores.append(float(confidence))
+                else:
+                    predicted_labels.append("O")
+                    confidence_scores.append(0.0)
+            
+            # Map predictions back to original words
+            word_predictions = []
+            word_idx = 0
+            
+            for i, (label, confidence) in enumerate(zip(predicted_labels, confidence_scores)):
+                # Skip special tokens ([CLS], [SEP], etc.)
+                if i > 0 and word_idx < len(words):
+                    word_predictions.append({
+                        "word": words[word_idx],
+                        "bbox": boxes[word_idx],
+                        "predicted_label": label,
+                        "confidence": confidence
+                    })
+                    word_idx += 1
+                    
+                if word_idx >= len(words):
+                    break
+            
+            return word_predictions
+            
+        except Exception as e:
+            print(f"⚠️ Error during inference for page: {e}")
+            # Return fallback predictions
+            return [
+                {
+                    "word": word,
+                    "bbox": bbox,
+                    "predicted_label": "O",
+                    "confidence": 0.0
+                }
+                for word, bbox in zip(words, boxes)
+            ]
+
+    def _analyze_document_predictions(page_predictions, id2label):
+        """
+        Analyze predictions across the entire document.
+        """
+        label_counts = {}
+        total_words = 0
+        high_confidence_predictions = 0
+        
+        for page_pred in page_predictions:
+            for pred in page_pred.get("predictions", []):
+                label = pred.get("predicted_label", "O")
+                confidence = pred.get("confidence", 0.0)
+                
+                label_counts[label] = label_counts.get(label, 0) + 1
+                total_words += 1
+                
+                if confidence > 0.8:
+                    high_confidence_predictions += 1
+        
+        # Calculate percentages
+        label_percentages = {
+            label: (count / total_words * 100) if total_words > 0 else 0
+            for label, count in label_counts.items()
+        }
+        
+        return {
+            "total_words": total_words,
+            "label_distribution": label_counts,
+            "label_percentages": label_percentages,
+            "high_confidence_ratio": high_confidence_predictions / total_words if total_words > 0 else 0,
+            "detected_structures": [label for label, count in label_counts.items() if count > 10 and label != "O"]
+        }
+
+    def _combine_rule_based_and_ml_predictions(rule_based_elements, ml_predictions, element_word_mapping):
+        """
+        Combine rule-based element analysis with ML predictions.
+        
+        Args:
+            rule_based_elements: Elements with rule-based analysis
+            ml_predictions: Word-level ML predictions from LayoutLMv3
+            element_word_mapping: List mapping each word to its element index
+        
+        Returns:
+            Enhanced elements with both rule-based and ML insights
+        """
+        enhanced_elements = []
+        
+        for element_idx, element in enumerate(rule_based_elements):
+            # Get ML predictions for this element's words
+            element_ml_predictions = []
+            for word_idx, pred in enumerate(ml_predictions):
+                if word_idx < len(element_word_mapping) and element_word_mapping[word_idx] == element_idx:
+                    element_ml_predictions.append(pred)
+            
+            # Analyze ML predictions for this element
+            ml_analysis = _analyze_element_ml_predictions(element_ml_predictions)
+            
+            # Combine rule-based and ML insights
+            enhanced_element = {
+                **element,
+                "ml_predictions": element_ml_predictions,
+                "ml_analysis": ml_analysis,
+                "confidence_score": ml_analysis.get("avg_confidence", 0.0),
+                "predicted_labels": ml_analysis.get("dominant_labels", []),
+                "hybrid_classification": _determine_hybrid_classification(
+                    element.get("semantic_role", "unknown"),
+                    ml_analysis.get("dominant_label", "O")
+                )
+            }
+            
+            enhanced_elements.append(enhanced_element)
+        
+        return enhanced_elements
+
+    def _analyze_element_ml_predictions(predictions):
+        """Analyze ML predictions for a single element."""
+        if not predictions:
+            return {"avg_confidence": 0.0, "dominant_labels": [], "label_distribution": {}}
+        
+        # Calculate average confidence
+        avg_confidence = sum(p.get("confidence", 0.0) for p in predictions) / len(predictions)
+        
+        # Count label occurrences
+        label_counts = {}
+        for pred in predictions:
+            label = pred.get("predicted_label", "O")
+            label_counts[label] = label_counts.get(label, 0) + 1
+        
+        # Find dominant labels
+        dominant_labels = sorted(label_counts.items(), key=lambda x: x[1], reverse=True)
+        dominant_label = dominant_labels[0][0] if dominant_labels else "O"
+        
+        return {
+            "avg_confidence": avg_confidence,
+            "dominant_label": dominant_label,
+            "dominant_labels": [label for label, count in dominant_labels[:3]],
+            "label_distribution": label_counts,
+            "total_words": len(predictions)
+        }
+
+    def _determine_hybrid_classification(rule_based_role, ml_label):
+        """Combine rule-based and ML classifications for final element type."""
+        # Priority mapping: rule-based takes precedence, ML provides refinement
+        if rule_based_role in ["main_title", "page_header", "section_header"]:
+            if "HEADER" in ml_label:
+                return f"confirmed_{rule_based_role}"
+            else:
+                return f"potential_{rule_based_role}"
+        
+        elif rule_based_role == "body_text":
+            if ml_label in ["B-ANSWER", "I-ANSWER"]:
+                return "detailed_content"
+            elif "TABLE" in ml_label:
+                return "table_content"
+            else:
+                return "body_text"
+        
+        elif rule_based_role == "table_caption":
+            if "TABLE" in ml_label:
+                return "confirmed_table_caption"
+            else:
+                return "potential_table_caption"
+        
+        else:
+            return f"{rule_based_role}_ml_{ml_label.lower()}"
+
     # Set device
     print("--------------------------------")
     print("Setting up device...")
@@ -555,20 +924,42 @@ def perform_inference(preprocessed_data, use_gpu:bool=False, layout_parsing:bool
             "model_predictions": []
         }
         
+        # Process each page with element-level understanding
+        all_elements = []
+
         # Process each page with enhanced layout understanding
         for page_structure in preprocessed_data.get("document_structure", []):
             page_number = page_structure.get("page_number", 0)
             elements = page_structure.get("elements", [])
             
-            # Convert layout elements to LayoutLMv3 format for inference
+            print(f"📄 Processing page {page_number} with {len(elements)} elements")
+
+            # STEP 1: Rule-based element analysis
+            page_elements = []
+            
+            # STEP 2: Prepare for ML inference - extract words and boxes from elements
             page_words = []
             page_boxes = []
+            element_word_mapping = []  # Track which words belong to which elements
             
-            for element in elements:
+            for element_idx, element in enumerate(elements):
+                # Rule-based analysis
+                element_analysis = _analyze_element_layout(element, page_structure)
+                
+                enhanced_element = {
+                    **element,
+                    "page_number": page_number,
+                    "layout_context": element_analysis,
+                    "semantic_role": _determine_semantic_role(element, page_structure),
+                    "reading_order": _calculate_reading_order(element, elements)
+                }
+                page_elements.append(enhanced_element)
+                
+                # Prepare words for ML inference
                 element_text = element.get("text", "")
                 element_bbox = element.get("bbox", [0, 0, 0, 0])
                 
-                # Split element text into words for token-level analysis
+                # Split element text into words for LayoutLMv3
                 words = element_text.split()
                 for i, word in enumerate(words):
                     page_words.append(word)
@@ -580,23 +971,41 @@ def perform_inference(preprocessed_data, use_gpu:bool=False, layout_parsing:bool
                         element_bbox[3]
                     ]
                     page_boxes.append(word_bbox)
+                    element_word_mapping.append(element_idx)  # Track which element this word belongs to
             
+            # STEP 3: ML Inference - run LayoutLMv3 on all words
             if page_words:
-                # Perform LayoutLMv3 inference on the page
+                print(f"🧠 Running LayoutLMv3 inference on {len(page_words)} words...")
                 page_predictions = _perform_page_inference(
                     processor, model, device, page_words, page_boxes, id2label
                 )
                 
+                # STEP 4: Combine rule-based + ML results
+                # Map ML predictions back to elements
+                enhanced_elements_with_ml = _combine_rule_based_and_ml_predictions(
+                    page_elements, page_predictions, element_word_mapping
+                )
+                
                 inference_results["model_predictions"].append({
                     "page_number": page_number,
-                    "predictions": page_predictions
+                    "predictions": page_predictions,
+                    "element_count": len(elements),
+                    "word_count": len(page_words)
                 })
+                
+                all_elements.extend(enhanced_elements_with_ml)
+            else:
+                # No words to process, just add rule-based elements
+                all_elements.extend(page_elements)
+
+
+
+
+        # Document-level layout analysis
+        inference_results["enhanced_elements"] = all_elements
+        inference_results["layout_analysis"] = _perform_document_layout_analysis(all_elements)
         
-        # Enhance elements with model predictions
-        inference_results["enhanced_elements"] = _enhance_elements_with_predictions(
-            preprocessed_data.get("document_structure", []),
-            inference_results["model_predictions"]
-        )
+        print(f"✅ Layout parsing completed: {len(all_elements)} elements analyzed")
         
     else:
         # Direct LayoutLMv3 inference
@@ -649,167 +1058,6 @@ def perform_inference(preprocessed_data, use_gpu:bool=False, layout_parsing:bool
     
     return inference_results
 
-def _perform_page_inference(processor, model, device, words, boxes, id2label):
-    """
-    Perform LayoutLMv3 inference on a single page.
-    
-    Args:
-        processor: LayoutLMv3 processor
-        model: LayoutLMv3 model
-        device: torch device
-        words: List of word strings
-        boxes: List of bounding boxes [x0, y0, x1, y1] normalized to 0-1000
-        id2label: Label mapping dictionary
-        
-    Returns:
-        List of predictions for each word
-    """
-    try:
-        # Prepare inputs for LayoutLMv3
-        # Create a dummy image (white background) since we're not using OCR
-        dummy_image = Image.new('RGB', (1000, 1000), color='white')
-        
-        # Process the inputs
-        encoding = processor(
-            dummy_image,
-            words,
-            boxes=boxes,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=512
-        )
-        
-        # Move to device
-        for key in encoding:
-            if isinstance(encoding[key], torch.Tensor):
-                encoding[key] = encoding[key].to(device)
-        
-        # Perform inference
-        with torch.no_grad():
-            outputs = model(**encoding)
-            predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
-            predicted_token_class = predictions.argmax(dim=-1)
-        
-        # Convert predictions to labels
-        predicted_labels = []
-        confidence_scores = []
-        
-        # Get the actual sequence length (excluding padding)
-        input_ids = encoding["input_ids"].squeeze()
-        attention_mask = encoding["attention_mask"].squeeze()
-        
-        for i, (token_id, attention) in enumerate(zip(input_ids, attention_mask)):
-            if attention == 0:  # Skip padding tokens
-                continue
-                
-            if i < len(predicted_token_class[0]):
-                pred_id = predicted_token_class[0][i].item()
-                confidence = predictions[0][i][pred_id].item()
-                
-                predicted_labels.append(id2label.get(pred_id, "O"))
-                confidence_scores.append(float(confidence))
-            else:
-                predicted_labels.append("O")
-                confidence_scores.append(0.0)
-        
-        # Map predictions back to original words
-        word_predictions = []
-        word_idx = 0
-        
-        for i, (label, confidence) in enumerate(zip(predicted_labels, confidence_scores)):
-            # Skip special tokens ([CLS], [SEP], etc.)
-            if i > 0 and word_idx < len(words):
-                word_predictions.append({
-                    "word": words[word_idx],
-                    "bbox": boxes[word_idx],
-                    "predicted_label": label,
-                    "confidence": confidence
-                })
-                word_idx += 1
-                
-            if word_idx >= len(words):
-                break
-        
-        return word_predictions
-        
-    except Exception as e:
-        print(f"⚠️ Error during inference for page: {e}")
-        # Return fallback predictions
-        return [
-            {
-                "word": word,
-                "bbox": bbox,
-                "predicted_label": "O",
-                "confidence": 0.0
-            }
-            for word, bbox in zip(words, boxes)
-        ]
-
-def _enhance_elements_with_predictions(document_structure, model_predictions):
-    """
-    Enhance layout elements with model predictions.
-    """
-    enhanced_elements = []
-    
-    for page_structure in document_structure:
-        page_number = page_structure.get("page_number", 0)
-        
-        # Find corresponding predictions
-        page_preds = None
-        for pred_page in model_predictions:
-            if pred_page.get("page_number") == page_number:
-                page_preds = pred_page.get("predictions", [])
-                break
-        
-        if page_preds:
-            for element in page_structure.get("elements", []):
-                enhanced_element = element.copy()
-                enhanced_element["model_predictions"] = []
-                
-                # Match predictions to elements based on text content
-                element_text = element.get("text", "")
-                for pred in page_preds:
-                    if pred.get("word", "") in element_text:
-                        enhanced_element["model_predictions"].append(pred)
-                
-                enhanced_elements.append(enhanced_element)
-    
-    return enhanced_elements
-
-def _analyze_document_predictions(page_predictions, id2label):
-    """
-    Analyze predictions across the entire document.
-    """
-    label_counts = {}
-    total_words = 0
-    high_confidence_predictions = 0
-    
-    for page_pred in page_predictions:
-        for pred in page_pred.get("predictions", []):
-            label = pred.get("predicted_label", "O")
-            confidence = pred.get("confidence", 0.0)
-            
-            label_counts[label] = label_counts.get(label, 0) + 1
-            total_words += 1
-            
-            if confidence > 0.8:
-                high_confidence_predictions += 1
-    
-    # Calculate percentages
-    label_percentages = {
-        label: (count / total_words * 100) if total_words > 0 else 0
-        for label, count in label_counts.items()
-    }
-    
-    return {
-        "total_words": total_words,
-        "label_distribution": label_counts,
-        "label_percentages": label_percentages,
-        "high_confidence_ratio": high_confidence_predictions / total_words if total_words > 0 else 0,
-        "detected_structures": [label for label, count in label_counts.items() if count > 10 and label != "O"]
-    }
-        
 def save_inference_results(inference_data, output_dir:str):
     '''
     Save the results in the output directory's subfolder called 'lmv3' which will be created if it doesn't exist.

@@ -5,15 +5,20 @@ stages:
   # Stage 1: Download SEC filings and convert to PDF
   download:
     cmd: >
-      python scripts/download_stage.py
+      python src/pdf_parser/download_stage.py
       --ticker ${ticker}
       --form-type ${form_type}
       --num-filings ${num_filings}
-      --output-dir data/raw/
+      --input-dir ${input_dir}
+      --output-dir ${output_dir}
+      --output-format ${output_format}
     params:
       - ticker
       - form_type
       - num_filings
+      - input_dir
+      - output_dir
+      - output_format
     outs:
       - data/raw/${ticker}/${form_type}/PDFs/
       - data/xbrl/
@@ -22,7 +27,7 @@ stages:
   # Stage 2: Parse PDFs to extract text, tables, and layout information  
   parse:
     cmd: >
-      python scripts/parse_stage.py
+      python src/pdf_parser/parser.py
       --input-dir data/raw/${ticker}/${form_type}/PDFs/
       --output-dir data/parsed/
       --output-format json
@@ -37,7 +42,7 @@ stages:
   # Stage 3: Extract tables using tabula-py and pdfplumber
   tables:
     cmd: >
-      python scripts/tables_stage.py
+      python src/pdf_parser/parser.py
       --input-dir data/raw/${ticker}/${form_type}/PDFs/
       --parsed-dir data/parsed/
       --mode tabula
@@ -52,7 +57,7 @@ stages:
   # Stage 4: Perform layout analysis using LayoutLMv3
   layout:
     cmd: >
-      python scripts/layout_stage.py
+      python src/pdf_parser/layout.py
       --input-dir data/parsed/
       --use-gpu ${use_gpu}
       --layout-parsing ${layout_parsing}
@@ -69,7 +74,7 @@ stages:
   # Stage 5: Run docling extraction for comparison baseline
   docling:
     cmd: >
-      python scripts/docling_stage.py
+      python src/pdf_parser/_docling.py
       --input-dir data/raw/${ticker}/${form_type}/PDFs/
       --output-dir data/parsed/
       --format both
@@ -82,7 +87,7 @@ stages:
   # Stage 6: Export and generate comparison reports
   export:
     cmd: >
-      python scripts/export_stage.py
+      python src/pdf_parser/_export.py
       --input-dir data/parsed/
       --output-dir data/exports/
       --formats json,csv,markdown
@@ -108,6 +113,10 @@ params:
   - ticker: "MSFT"
   - form_type: "10-K" 
   - num_filings: 3
+  - input_dir: data/raw/
+  - output_dir: data/parsed/
+  - output_format: json
+  - mode: tabula
   - use_gpu: false
   - layout_parsing: true
   - generate_comparison: true

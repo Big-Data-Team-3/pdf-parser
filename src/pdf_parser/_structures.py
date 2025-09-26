@@ -9,14 +9,8 @@ class WordBox:
     """Data class for word box information with comprehensive positioning data"""
     text: str
     x0: float
-    y0: float
     x1: float
-    y1: float
     width: float
-    height: float
-    fontname: Optional[str] = None
-    fontsize: Optional[float] = None
-    fontcolor: Optional[str] = None
     confidence: Optional[float] = None
     page_number: int = 0
     word_index: int = 0
@@ -24,8 +18,6 @@ class WordBox:
     upright: Optional[bool] = None  # Text orientation (True = normal, False = rotated)
     top: Optional[float] = None     # Page-relative top position
     bottom: Optional[float] = None  # Page-relative bottom position
-    left: Optional[float] = None    # Page-relative left position  
-    right: Optional[float] = None   # Page-relative right position
 
     def to_dict(self):
         return asdict(self)
@@ -40,7 +32,8 @@ class WordBox:
 
     @property
     def area(self):
-        return self.width * self.height
+        height = self.bottom - self.top
+        return self.width * height
 
     @property
     def is_rotated(self):
@@ -91,14 +84,19 @@ class PageLayout:
         """Text density as percentage of page area covered by text"""
         if not self.word_boxes:
             return 0.0
-        total_text_area = sum(box.area for box in self.word_boxes)
+        # Calculate area manually instead of using box.area
+        total_text_area = sum((box.x1 - box.x0) * (box.bottom - box.top) 
+                            for box in self.word_boxes 
+                            if box.top is not None and box.bottom is not None)
         page_area = self.page_width * self.page_height
         return (total_text_area / page_area) * 100 if page_area > 0 else 0.0
 
     @property
     def average_font_size(self):
         """Average font size across all words"""
-        font_sizes = [box.fontsize for box in self.word_boxes if box.fontsize is not None]
+        # Use fontsize if it exists, otherwise skip
+        font_sizes = [getattr(box, 'fontsize', None) for box in self.word_boxes]
+        font_sizes = [fs for fs in font_sizes if fs is not None]
         return np.mean(font_sizes) if font_sizes else 0.0
 
     @property

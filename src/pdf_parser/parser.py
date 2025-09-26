@@ -2,13 +2,13 @@
 
 #region imports
 import os
+from datetime import datetime, timezone
 import glob
 import json
 from pathlib import Path
 import pdfplumber
 import pytesseract
 from PIL import Image
-from datetime import datetime
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Tuple, Optional
@@ -97,55 +97,44 @@ class PDFParser:
             'page_details': []
         }
     
+
+    
+    @staticmethod
     def _convert_output_format(out_base: str, output_format: str):
         """
         Convert the extracted text output to the requested format (json, markdown, txt).
         """
-        txt_file = f"{out_base}_extracted.txt"
-        json_file = f"{out_base}_extracted.json"
-        md_file = f"{out_base}_extracted.md"
-        if not os.path.exists(txt_file):
-            print(f"Text file {txt_file} not found, skipping format conversion.")
-            return
-        with open(txt_file, "r", encoding="utf-8") as f:
-            text = f.read()
-        if output_format == "json":
-            with open(json_file, "w", encoding="utf-8") as f:
-                json.dump({"text": text}, f, indent=2, ensure_ascii=False)
-        elif output_format == "markdown":
-            with open(md_file, "w", encoding="utf-8") as f:
-                f.write("# Extracted Text\n\n")
-                f.write(text)
-        elif output_format == "txt":
-            pass  # Already in txt
-        print(f"Output written in {output_format} format.")
 
-    def _process_single_pdf(self, pdf_path, output_dir, filename, table_settings, output_format="json"):
+        pass
+
+    def _process_single_pdf(self, pdf_path, output_dir, filename, table_settings, output_format="json", force=False):
         """
         Process a single PDF file with quality assessment, word box extraction, and layout analysis.
         Saves outputs to disk and returns processing statistics.
         Only writes the extracted text in the requested output_format.
         """
-        import os
-        from datetime import datetime
+        
 
         # Set up output paths
         base_name = filename.rsplit('.', 1)[0]
+        pdf_output_dir = os.path.join(output_dir, base_name)
+        os.makedirs(pdf_output_dir, exist_ok=True)
+
         output_paths = {}
         if output_format == "txt":
             output_paths["text"] = os.path.join(output_dir, f"{base_name}_extracted.txt")
         elif output_format == "json":
-            output_paths["text"] = os.path.join(output_dir, f"{base_name}_extracted.json")
+            output_paths["text"] = os.path.join(pdf_output_dir, f"{base_name}_extracted.json")
         elif output_format == "markdown":
             output_paths["text"] = os.path.join(output_dir, f"{base_name}_extracted.md")
         else:
             raise ValueError(f"Unsupported output_format: {output_format}")
 
         # Always save these
-        metadata_file = os.path.join(output_dir, f"{base_name}_metadata.json")
-        wordboxes_file = os.path.join(output_dir, f"{base_name}_wordboxes.json")
-        layout_file = os.path.join(output_dir, f"{base_name}_layout.json")
-        tables_dir = os.path.join(output_dir, "tables")
+        metadata_file = os.path.join(pdf_output_dir, f"{base_name}_metadata.json")
+        wordboxes_file = os.path.join(pdf_output_dir, f"{base_name}_wordboxes.json")
+        layout_file = os.path.join(pdf_output_dir, f"{base_name}_layout.json")
+        tables_dir = os.path.join(pdf_output_dir, "tables")
         os.makedirs(tables_dir, exist_ok=True)
 
         # --- Table extraction ---
@@ -154,11 +143,12 @@ class PDFParser:
         if self.table_extractor in ("pdfplumber", "both"):
             self._extract_tables_with_pdfplumber(pdf_path, tables_dir, table_settings)
 
-        # Optionally skip if already processed
-        if all(os.path.exists(f) for f in [*output_paths.values(), metadata_file, wordboxes_file, layout_file]):
-            with open(metadata_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+        # # Optionally skip if already processed
+        # if all(os.path.exists(f) for f in [*output_paths.values(), metadata_file, wordboxes_file, layout_file]):
+        #     with open(metadata_file, "r", encoding="utf-8") as f:
+        #         return json.load(f)
 
+        # --- Text extraction ---
         file_stats = {
             'filename': filename,
             'total_pages': 0,
@@ -170,11 +160,12 @@ class PDFParser:
             'page_details': []
         }
         start_time = datetime.now()
-
+        print(f"--------------------------------")
+        print(f"Starting text extraction...")
         extracted_pages = []
         all_word_boxes = []
         all_page_layouts = []
-
+        print(f"--------------------------------")
         try:
             with pdfplumber.open(pdf_path) as pdf:
                 file_stats['total_pages'] = len(pdf.pages)
@@ -183,7 +174,10 @@ class PDFParser:
                     # _extract_and_integrate_tables(pdf_path, tables_dir, page_num-1, table_settings)
 
                     # --- Page extraction ---
-                    page_result = self._extract_page_with_quality_check(page, page_num)
+                    try:
+                        page_result = self._extract_page_with_quality_check(page, page_num)
+                    except Exception as e:
+                        print(f"      ❌ Page {page_num}: {e}")
                     extracted_pages.append(page_result)
                     all_word_boxes.extend(page_result['word_boxes'])
                     all_page_layouts.append(page_result['page_layout'])
@@ -199,6 +193,7 @@ class PDFParser:
                     file_stats['total_word_boxes'] += len(page_result['word_boxes'])
 
             # Save outputs
+            self._save_txt_file(extracted_pages, pdf_output_dir, file_stats)
             self._save_extracted_content(extracted_pages, output_paths["text"], metadata_file, file_stats, output_format)
             self._save_word_boxes_and_layout(all_word_boxes, all_page_layouts, wordboxes_file, layout_file, file_stats)
 
@@ -207,6 +202,29 @@ class PDFParser:
 
         file_stats['processing_time'] = (datetime.now() - start_time).total_seconds()
         return file_stats
+
+
+    def _save_txt_file(self, extracted_pages, output_dir, file_stats):
+        txt_output_path = os.path.join(output_dir, "extracted.txt")
+        with open(txt_output_path, 'w', encoding='utf-8') as f:
+
+            f.write(f"# Extracted Text from {file_stats['filename']}\n")
+            f.write(f"# Processing Date: {datetime.now().isoformat()}\n")
+            f.write(f"# Total Pages: {file_stats['total_pages']}\n")
+            f.write(f"# PDFplumber Pages: {file_stats['pdfplumber_pages']}\n")
+            f.write(f"# OCR Pages: {file_stats['ocr_pages']}\n")
+            f.write(f"# Poor Quality Pages: {file_stats['poor_quality_pages']}\n\n")
+            
+            for page_data in extracted_pages:
+                page_num = page_data['metadata']['page_number']
+                method = page_data['metadata']['method']
+                quality_score = page_data['metadata']['quality_score']
+                
+                f.write(f"\n{'='*80}\n")
+                f.write(f"PAGE {page_num} | Method: {method} | Quality Score: {quality_score}\n")
+                f.write(f"{'='*80}\n\n")
+                f.write(page_data['text'])
+                f.write(f"\n\n")
 
     def _process_pdf(
         self,
@@ -232,10 +250,6 @@ class PDFParser:
             table_settings=table_settings,
             output_format=output_format
         )
-
-        # Convert extracted text to the requested format (if not already in that format)
-        self._convert_output_format(out_base, output_format)
-
         return file_stats
 
     def _process_pdfs(
@@ -272,7 +286,6 @@ class PDFParser:
         Process all PDF files in a directory (optionally filter by year).
         Returns a list of stats/metadata for each file.
         """
-        import glob, os
         pdf_files = glob.glob(os.path.join(input_dir, "*.pdf"))
         if year:
             pdf_files = [f for f in pdf_files if year in os.path.basename(f)]
@@ -321,14 +334,19 @@ class PDFParser:
         os.makedirs(tables_dir, exist_ok=True)
         metadata_dir = os.path.join(tables_dir, "metadata")
         os.makedirs(metadata_dir, exist_ok=True)
-
+        print(f"--------------------------------")
+        print(f"Extracting tables with tabula from {pdf_path}...")
+        print(f"Using stream mode...")
+        start_time = datetime.now()
         tables = tabula.read_pdf(
             pdf_path,
             pages="all",
             multiple_tables=True,
             stream=True
         )
-
+        end_time = datetime.now()
+        print(f"Time taken to extract tables: {end_time - start_time}")
+        table_extraction_time = (end_time - start_time).total_seconds()
         file_id = compute_file_hash(pdf_path)
         output_files = []
         tables_metadata = []
@@ -371,7 +389,7 @@ class PDFParser:
                 "validation_reason": validation_reason,
                 "numeric_cell_ratio": round(numeric_cell_ratio, 3),
                 "empty_cell_ratio": round(empty_cell_ratio, 3),
-                "extraction_timestamp": datetime.utcnow().isoformat() + "Z"
+                "extraction_timestamp": datetime.now(timezone.utc).isoformat() + "Z"
             }
             tables_metadata.append(table_meta)
 
@@ -381,7 +399,7 @@ class PDFParser:
             "source_path": pdf_path,
             "filename": os.path.basename(pdf_path),
             "file_size_bytes": os.path.getsize(pdf_path),
-            "extraction_timestamp": datetime.utcnow().isoformat() + "Z",
+            "extraction_timestamp": datetime.now(timezone.utc).isoformat() + "Z",
             "tabula_version": getattr(tabula, '__version__', 'unknown'),
             "mode": "stream",
             "tables_found": len(tables),
@@ -420,20 +438,104 @@ class PDFParser:
         Extract text and word boxes from a single page with quality assessment and OCR fallback.
         Returns a dict with keys: 'text', 'word_boxes', 'page_layout', 'metadata'.
         """
-        # TODO: Implement extraction logic (pdfplumber, OCR fallback, layout analysis, etc.)
-        raise NotImplementedError("Implement _extract_page_with_quality_check")
+        # Try pdfplumber first
+        text = page.extract_text()
+        
+        # Quality assessment metrics
+        char_count = len(text) if text else 0
+        word_count = len(text.split()) if text else 0
+        line_count = len(text.split('\n')) if text else 0
+        
+        # Quality thresholds (adjust based on your needs)
+        min_chars_per_page = 100
+        max_chars_per_page = 10000
+        min_words_per_page = 20
+        
+        quality_metrics = {
+            'char_count': char_count,
+            'word_count': word_count,
+            'line_count': line_count,
+            'char_density': char_count / (page.width * page.height) if hasattr(page, 'width') else 0,
+            'quality_score': 0
+        }
+        
+        # Determine quality and extraction method
+        if not text or char_count < min_chars_per_page:
+            # Poor extraction, try OCR
+            print(f"    ⚠️  Page {page_num}: Poor pdfplumber extraction ({char_count} chars), trying OCR...")
+            text = self._extract_with_ocr(page)
+            method = 'tesseract'
+            quality_flag = True
+            
+            # Recalculate metrics for OCR text
+            quality_metrics.update({
+                'char_count': len(text) if text else 0,
+                'word_count': len(text.split()) if text else 0,
+                'line_count': len(text.split('\n')) if text else 0
+            })
+            
+        elif char_count > max_chars_per_page:
+            # Suspiciously long text (might be garbled)
+            print(f"    ⚠️  Page {page_num}: Suspiciously long text ({char_count} chars)")
+            method = 'pdfplumber'
+            quality_flag = True
+            
+        else:
+            # Good extraction
+            method = 'pdfplumber'
+            quality_flag = False
+        
+        # Calculate quality score (0-100)
+        quality_score = self._calculate_quality_score(quality_metrics, method)
+        quality_metrics['quality_score'] = quality_score
+        
+        # Extract word boxes and perform layout analysis
+        word_boxes, text_blocks = PDFParser._extract_word_boxes_with_layout(page, page_num, method)
+        
+        # Analyze page layout
+        layout_analysis = PDFParser._analyze_page_layout(word_boxes, page.width, page.height)
+        
+        # Create PageLayout object
+        from pdf_parser._structures import PageLayout
+        page_layout = PageLayout(
+            page_number=page_num,
+            page_width=page.width,
+            page_height=page.height,
+            word_boxes=word_boxes,
+            text_blocks=text_blocks,
+            reading_order=layout_analysis['reading_order'],
+            layout_analysis=layout_analysis
+        )
+        
+        # Create metadata
+        metadata = {
+            'page_number': page_num,
+            'method': method,
+            'quality_flag': quality_flag,
+            'quality_score': quality_score,
+            'extraction_timestamp': datetime.now().isoformat(),
+            'word_count': len(word_boxes),
+            'layout_type': layout_analysis['layout_type'],
+            'estimated_columns': layout_analysis['columns'],
+            'text_density': layout_analysis['text_density'],
+            **quality_metrics
+        }
+        
+        return {
+            'text': text or "",
+            'word_boxes': word_boxes,
+            'page_layout': page_layout,
+            'metadata': metadata
+        }
 
+    @staticmethod
     def _save_extracted_content(extracted_pages, output_file, metadata_file, file_stats, output_format):
         """
         Save extracted text and metadata with page-level granularity in the requested format.
         """
         # Save extracted text in the requested format
-        if output_format == "txt":
-            with open(output_file, 'w', encoding='utf-8') as f:
-                for page_data in extracted_pages:
-                    f.write(page_data['text'])
-                    f.write("\n\n")
-        elif output_format == "json":
+        
+        if output_format == "json":
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(
                     {
@@ -461,12 +563,47 @@ class PDFParser:
         with open(metadata_file, 'w', encoding='utf-8') as f:
             json.dump(file_stats, f, indent=2, ensure_ascii=False)
 
-    def _save_word_boxes_and_layout(all_word_boxes, all_page_layouts, wordboxes_file, layout_file, file_stats):
+    def _save_word_boxes_and_layout(self, all_word_boxes, all_page_layouts, wordboxes_file, layout_file, file_stats):
         """
         Save word boxes and layout data as JSON files.
         """
-        # TODO: Implement saving logic for word boxes and layout
-        raise NotImplementedError("Implement _save_word_boxes_and_layout")
+        # Save word boxes data
+        word_boxes_data = {
+            'file_info': {
+                'filename': file_stats['filename'],
+                'processing_date': datetime.now().isoformat(),
+                'total_word_boxes': len(all_word_boxes),
+                'total_pages': file_stats['total_pages']
+            },
+            'word_boxes': [box.to_dict() for box in all_word_boxes],
+            'statistics': {
+                'total_word_boxes': len(all_word_boxes),
+                'avg_word_boxes_per_page': len(all_word_boxes) / file_stats['total_pages'] if file_stats['total_pages'] > 0 else 0,
+                'pages_with_word_boxes': len([layout for layout in all_page_layouts if layout.word_boxes])
+            }
+        }
+        # Save word boxes data
+        with open(wordboxes_file, 'w', encoding='utf-8') as f:
+            json.dump(word_boxes_data, f, indent=2, ensure_ascii=False)
+
+
+        # Save layout data
+        layout_data = {
+            'file_info': {
+                'filename': file_stats['filename'],
+                'processing_date': datetime.now().isoformat(),
+                'total_pages': file_stats['total_pages']
+            },
+            'page_layouts': [layout.to_dict() for layout in all_page_layouts],
+            'document_analysis': self._analyze_document_layout(all_page_layouts)
+        }
+        
+        with open(layout_file, 'w', encoding='utf-8') as f:
+            json.dump(layout_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"  📦 Saved word boxes: {os.path.basename(wordboxes_file)}")
+        print(f"  📐 Saved layout data: {os.path.basename(layout_file)}")
+        print(f"  📊 Total word boxes: {len(all_word_boxes)}")
 
     def _extract_with_ocr(self, page):
         """
@@ -526,7 +663,58 @@ class PDFParser:
 
         return min(score, 100)
 
-    def _analyze_page_layout(self, word_boxes, page_width, page_height):
+    @staticmethod
+    def _extract_word_boxes_ocr(page, page_num):
+        import pytesseract
+        word_boxes = []
+        try:
+            page_image = page.to_image(resolution=300)
+            pil_image = page_image.original
+            ocr_data = pytesseract.image_to_data(
+                pil_image,
+                lang='eng',
+                output_type=pytesseract.Output.DICT
+            )
+            
+            for idx, (level, text, conf, x, y, w, h) in enumerate(zip(
+                ocr_data['level'],
+                ocr_data['text'],
+                ocr_data['conf'],
+                ocr_data['left'],
+                ocr_data['top'],
+                ocr_data['width'],
+                ocr_data['height']
+            )):
+                # Only process word-level entries (level 5) with valid confidence and non-empty text
+                if level == 5 and conf > 30 and text.strip():
+                    try:
+                        x0 = float(x)
+                        x1 = float(x) + float(w)
+                        top = float(y)
+                        bottom = float(y) + float(h)
+                        width = float(w)
+                    except (TypeError, ValueError):
+                        continue  # skip this word if any value is invalid
+                    
+                    word_box = WordBox(
+                        text=text.strip(),
+                        x0=x0,
+                        x1=x1,
+                        top=top,
+                        bottom=bottom,
+                        width=width,
+                        confidence=float(conf),
+                        page_number=page_num,
+                        word_index=idx
+                    )
+                    word_boxes.append(word_box)
+        except Exception as e:
+            print(f"      ❌ OCR word box extraction failed for page {page_num}: {e}")
+        return word_boxes
+    
+    #region layout analysis
+    @staticmethod
+    def _analyze_page_layout(word_boxes, page_width, page_height):
         """
         Analyze page layout and determine reading order with comprehensive metrics.
         Returns a dictionary with layout analysis.
@@ -545,13 +733,13 @@ class PDFParser:
             }
 
         # Calculate text density
-        total_text_area = sum(box.area for box in word_boxes)
+        total_text_area = sum((box.x1 - box.x0) * (box.bottom - box.top) for box in word_boxes)
         page_area = page_width * page_height
         text_density = total_text_area / page_area if page_area > 0 else 0
 
         # Determine layout type based on word distribution
-        x_positions = [box.center_x for box in word_boxes]
-        y_positions = [box.center_y for box in word_boxes]
+        x_positions = [(box.x0 + box.x1) / 2 for box in word_boxes]
+        y_positions = [(box.top + box.bottom) / 2 for box in word_boxes]
 
         # Simple column detection
         x_sorted = sorted(set(x_positions))
@@ -562,15 +750,11 @@ class PDFParser:
         estimated_columns = max(1, int(page_width / (avg_gap + 50)) if avg_gap > 0 else 1)
 
         # Determine reading order
-        reading_order = self._determine_reading_order(word_boxes, estimated_columns)
+        reading_order = PDFParser._determine_reading_order(word_boxes, estimated_columns)
 
         # Classify layout type
-        layout_type = self._classify_layout_type(word_boxes, estimated_columns, text_density)
+        layout_type = PDFParser._classify_layout_type(word_boxes, estimated_columns, text_density)
 
-        # Calculate additional metrics
-        font_sizes = [box.fontsize for box in word_boxes if box.fontsize is not None]
-        avg_font_size = np.mean(font_sizes) if font_sizes else 0
-        font_size_variance = np.var(font_sizes) if len(font_sizes) > 1 else 0
 
         x_spread = max(x_positions) - min(x_positions) if x_positions else 0
         y_spread = max(y_positions) - min(y_positions) if y_positions else 0
@@ -582,8 +766,6 @@ class PDFParser:
             'text_density': text_density,
             'layout_type': layout_type,
             'reading_order': reading_order,
-            'avg_font_size': avg_font_size,
-            'font_size_variance': font_size_variance,
             'aspect_ratio': aspect_ratio,
             'text_flow_analysis': {
                 'x_spread': x_spread,
@@ -594,6 +776,7 @@ class PDFParser:
             }
         }
 
+    @staticmethod
     def _extract_word_boxes_with_layout(page, page_num, method='pdfplumber'):
         """
         Extract word boxes with comprehensive layout analysis including document positioning.
@@ -611,27 +794,19 @@ class PDFParser:
                     keep_blank_chars=False
                 )
                 for idx, word in enumerate(words):
-                    if not all(attr in word for attr in ['text', 'x0', 'y0', 'x1', 'y1']):
+                    if not all(attr in word for attr in ['text', 'x0', 'x1', 'top', 'bottom']):
                         continue
                     word_box = WordBox(
                         text=word.get('text', ''),
                         x0=float(word.get('x0', 0)),
-                        y0=float(word.get('y0', 0)),
                         x1=float(word.get('x1', 0)),
-                        y1=float(word.get('y1', 0)),
-                        width=float(word.get('x1', 0)) - float(word.get('x0', 0)),
-                        height=float(word.get('y1', 0)) - float(word.get('y0', 0)),
-                        fontname=word.get('fontname'),
-                        fontsize=word.get('size'),
-                        fontcolor=word.get('fontcolor'),
-                        doctop=word.get('doctop'),
-                        upright=word.get('upright'),
                         top=word.get('top'),
                         bottom=word.get('bottom'),
-                        left=word.get('left'),
-                        right=word.get('right'),
+                        doctop=word.get('doctop'),
+                        upright=word.get('upright'),
                         page_number=page_num,
-                        word_index=idx
+                        word_index=idx,
+                        width=float(word.get('x1', 0)) - float(word.get('x0', 0)),
                     )
                     word_boxes.append(word_box)
                 try:
@@ -640,7 +815,7 @@ class PDFParser:
                     text_blocks = []
             else:  # OCR method
                 # You can implement a more detailed OCR word box extraction if needed
-                word_boxes = []  # Placeholder for OCR word box extraction
+                word_boxes = PDFParser._extract_word_boxes_ocr(page, page_num)
                 text_blocks = []
         except Exception as e:
             print(f"      ❌ Word box extraction failed for page {page_num}: {e}")
@@ -692,7 +867,8 @@ class PDFParser:
             'pages_with_content': len([layout for layout in page_layouts if layout.word_boxes])
         }
 
-    def _determine_reading_order(self, word_boxes, estimated_columns):
+    @staticmethod
+    def _determine_reading_order(word_boxes, estimated_columns):
         """
         Determine reading order of words (top-to-bottom, left-to-right), optionally column-aware.
         Returns a list of word indices in reading order.
@@ -702,7 +878,7 @@ class PDFParser:
 
         # Simple top-to-bottom, left-to-right sorting
         def simple_reading_order():
-            sorted_boxes = sorted(word_boxes, key=lambda box: (box.y0, box.x0))
+            sorted_boxes = sorted(word_boxes, key=lambda box: (box.top, box.x0))
             return [box.word_index for box in sorted_boxes]
 
         # Column-aware reading order
@@ -713,11 +889,12 @@ class PDFParser:
             column_width = page_width / estimated_columns
             column_groups = [[] for _ in range(estimated_columns)]
             for box in word_boxes:
-                column_idx = min(int(box.center_x / column_width), estimated_columns - 1)
+                center_x = (box.x0 + box.x1) / 2
+                column_idx = min(int(center_x / column_width), estimated_columns - 1)
                 column_groups[column_idx].append(box)
             reading_order = []
             for column in column_groups:
-                column_sorted = sorted(column, key=lambda box: box.y0)
+                column_sorted = sorted(column, key=lambda box: box.top)
                 reading_order.extend([box.word_index for box in column_sorted])
             return reading_order
 
@@ -730,7 +907,8 @@ class PDFParser:
         else:
             return simple_reading_order()
 
-    def _classify_layout_type(self, word_boxes, estimated_columns, text_density):
+    @staticmethod
+    def _classify_layout_type(word_boxes, estimated_columns, text_density):
         """
         Classify the layout type based on word distribution and density.
         """
@@ -738,18 +916,14 @@ class PDFParser:
             return 'empty'
 
         # Analyze word distribution
-        x_positions = [box.center_x for box in word_boxes]
-        y_positions = [box.center_y for box in word_boxes]
+        x_positions = [(box.x0 + box.x1) / 2 for box in word_boxes]
+        y_positions = [(box.top + box.bottom) / 2 for box in word_boxes]
 
         # Calculate spreads and statistics
         x_spread = max(x_positions) - min(x_positions) if x_positions else 0
         y_spread = max(y_positions) - min(y_positions) if y_positions else 0
         aspect_ratio = x_spread / y_spread if y_spread > 0 else 0
 
-        # Analyze font size distribution
-        font_sizes = [box.fontsize for box in word_boxes if box.fontsize is not None]
-        avg_font_size = np.mean(font_sizes) if font_sizes else 12
-        font_size_variance = np.var(font_sizes) if len(font_sizes) > 1 else 0
 
         # Analyze text density patterns
         density_thresholds = {
@@ -768,15 +942,10 @@ class PDFParser:
         elif estimated_columns == 1:
             if aspect_ratio < 0.3:
                 return 'narrow_single_column'
-            elif font_size_variance > 50:  # High variance in font sizes
-                return 'mixed_formatting_single_column'
             else:
                 return 'single_column'
         elif estimated_columns == 2:
-            if font_size_variance > 50:
-                return 'mixed_formatting_two_column'
-            else:
-                return 'two_column'
+            return 'two_column'
         elif estimated_columns >= 3:
             if text_density > density_thresholds['dense']:
                 return 'dense_multi_column'
@@ -784,8 +953,6 @@ class PDFParser:
                 return 'multi_column'
         elif x_spread < y_spread * 0.4:
             return 'narrow_column'
-        elif font_size_variance > 100:  # Very high variance
-            return 'complex_mixed_layout'
         elif text_density > density_thresholds['very_dense']:
             return 'very_dense_layout'
         else:
@@ -793,5 +960,16 @@ class PDFParser:
 
 #endregion
 
-#region main
+#region test call
+
+if __name__ == "__main__":
+    parser = PDFParser(table_extractor="tabula")
+    parser.parse(
+        input_source="data/raw/MSFT/10-K/PDFs/MSFT_10-K_20230727_000095017023035122.pdf",
+        output_dir="data/parsed",
+        output_format="json"
+    )
+
+
+
 #endregion
